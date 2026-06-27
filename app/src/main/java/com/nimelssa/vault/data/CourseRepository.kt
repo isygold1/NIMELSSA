@@ -117,7 +117,12 @@ object CourseRepository {
         return _courses.value.find { it.code == code }
     }
 
-    fun toggleOffline(code: String) {
+    /**
+     * Toggles the offline flag. The actual file download / deletion
+     * is handled by [OfflineManager.saveOffline] / [OfflineManager.removeOffline].
+     * This just flips the in-memory flag optimistically.
+     */
+    fun toggleOfflineFlag(code: String) {
         _courses.value = _courses.value.map {
             if (it.code == code) it.copy(isOffline = !it.isOffline) else it
         }
@@ -144,5 +149,71 @@ object CourseRepository {
 
     fun rejectCourse(code: String) {
         _courses.value = _courses.value.filter { it.code != code }
+    }
+
+    /**
+     * Merges Firestore-synced resource data into the in-memory course list.
+     * If the course doesn't exist yet (e.g., a newly proposed one), it adds it.
+     */
+    fun mergeCourseResources(
+        code: String,
+        lectureNotesUrl: String,
+        pastQuestionsUrl: String,
+        submittedBy: String,
+        notes: String
+    ) {
+        val existing = _courses.value.find { it.code == code }
+        if (existing != null) {
+            _courses.value = _courses.value.map {
+                if (it.code == code) {
+                    it.copy(
+                        lectureNotesUrl = lectureNotesUrl.ifBlank { it.lectureNotesUrl },
+                        pastQuestionsUrl = pastQuestionsUrl.ifBlank { it.pastQuestionsUrl },
+                        submittedBy = submittedBy.ifBlank { it.submittedBy },
+                        notes = notes.ifBlank { it.notes }
+                    )
+                } else it
+            }
+        } else {
+            // Course not in hardcoded list — add it (e.g., a proposed course)
+            val inferredLevel = "${code.firstOrNull { it.isDigit() } ?: '2'}00"
+            _courses.value = _courses.value + Course(
+                code = code,
+                name = code,
+                category = "MEDICAL LABORATORY SCIENCE",
+                level = inferredLevel,
+                semester = 1,
+                progress = 0,
+                isPending = false,
+                lectureNotesUrl = lectureNotesUrl,
+                pastQuestionsUrl = pastQuestionsUrl,
+                submittedBy = submittedBy,
+                notes = notes
+            )
+        }
+    }
+
+    /**
+     * Returns the list of course codes that have been saved offline
+     * (stored in-memory; persisted via [OfflineManager]).
+     */
+    fun getOfflineCourses(): List<Course> {
+        return _courses.value.filter { it.isOffline }
+    }
+
+    /**
+     * Sets the offline flag on a course (used by [OfflineManager] on init).
+     */
+    fun mergeOfflineFlag(code: String, isOffline: Boolean) {
+        _courses.value = _courses.value.map {
+            if (it.code == code) it.copy(isOffline = isOffline) else it
+        }
+    }
+
+    /**
+     * Returns true if any course has an offline flag set to true.
+     */
+    fun hasOfflineCourses(): Boolean {
+        return _courses.value.any { it.isOffline }
     }
 }

@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,8 +44,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
+import com.nimelssa.vault.data.FirestoreCourseSync
 import com.nimelssa.vault.data.UserRole
 import com.nimelssa.vault.data.UserSession
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,9 +61,10 @@ fun AdminScreen(
     val allCourses by CourseRepository.courses.collectAsState()
 
     var showAddForm by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     // Pending proposals for this rep's level (all, not just first)
-    val allPending = remember { CourseRepository.getPendingCourses() }
+    val allPending = CourseRepository.getPendingCourses()
     val pendingForLevel = if (isAdmin) allPending
                           else allPending.filter { it.level == repLevel }
 
@@ -123,14 +127,30 @@ fun AdminScreen(
                         Spacer(modifier = Modifier.height(10.dp))
                         Row(modifier = Modifier.fillMaxWidth()) {
                             Button(
-                                onClick = { CourseRepository.approveCourse(pending.code) },
+                                onClick = {
+                                    CourseRepository.approveCourse(pending.code)
+                                    scope.launch {
+                                        FirestoreCourseSync.saveResources(
+                                            code = pending.code,
+                                            lectureNotesUrl = pending.lectureNotesUrl,
+                                            pastQuestionsUrl = pending.pastQuestionsUrl,
+                                            submittedBy = pending.submittedBy,
+                                            notes = pending.notes
+                                        )
+                                    }
+                                },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(8.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
                             ) { Text("✅ Approve", fontWeight = FontWeight.Bold) }
                             Spacer(modifier = Modifier.width(8.dp))
                             Button(
-                                onClick = { CourseRepository.rejectCourse(pending.code) },
+                                onClick = {
+                                    scope.launch {
+                                        FirestoreCourseSync.removeResources(pending.code)
+                                    }
+                                    CourseRepository.rejectCourse(pending.code)
+                                },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(8.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
@@ -193,6 +213,7 @@ fun AdminScreen(
 
 @Composable
 private fun CourseManageRow(course: Course, canDelete: Boolean) {
+    val scope = rememberCoroutineScope()
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -225,7 +246,12 @@ private fun CourseManageRow(course: Course, canDelete: Boolean) {
             if (canDelete) {
                 Text(
                     text = "🗑️",
-                    modifier = Modifier.clickable { CourseRepository.removeCourse(course.code) }
+                    modifier = Modifier.clickable {
+                        scope.launch {
+                            FirestoreCourseSync.removeResources(course.code)
+                        }
+                        CourseRepository.removeCourse(course.code)
+                    }
                 )
             }
         }

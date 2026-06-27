@@ -28,7 +28,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.nimelssa.vault.data.AuthMode
-import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
 import com.nimelssa.vault.data.UserRole
 import com.nimelssa.vault.data.UserSession
@@ -202,9 +201,8 @@ fun MainApp() {
                     arguments = listOf(navArgument("courseCode") { type = NavType.StringType })
                 ) { backStackEntry ->
                     val courseCode = backStackEntry.arguments?.getString("courseCode") ?: ""
-                    val course = CourseRepository.findCourse(courseCode)
                     DocumentViewerScreen(
-                        course = course,
+                        courseCode = courseCode,
                         onClose = { navController.popBackStack() }
                     )
                 }
