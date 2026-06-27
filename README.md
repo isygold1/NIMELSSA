@@ -58,8 +58,12 @@ You can install NIMELSSA Vault **two ways**:
 
 ### Option 1 — PWA (browser install)
 
-1. Open the deployed app at **GitHub Pages URL** (see repo Settings → Pages)
-2. In Chrome / Edge, tap **"Install"** or **"Add to Home Screen"**
+1. Serve the app locally or on any static host:
+   ```bash
+   python3 -m http.server 8000
+   # or use npx serve .
+   ```
+2. Open in Chrome / Edge and tap **"Install"** or **"Add to Home Screen"**
 3. Launches standalone with no browser chrome
 
 ### Option 2 — Android APK (native app)
@@ -104,7 +108,6 @@ cd android && ./gradlew assembleDebug
 | Workflow | Trigger | Output |
 |----------|---------|--------|
 | `build-apk.yml` | Push to `main`, PR, or manual dispatch | Debug APK artifact (+ GitHub Release on tag push) |
-| `deploy-pages.yml` | Push to `main` or manual dispatch | Live PWA at GitHub Pages |
 
 To trigger a **release build** with an APK attachment, push a tag:
 ```bash
