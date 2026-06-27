@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -27,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.Course
@@ -221,13 +225,31 @@ fun ProposeScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Message feedback
-        if (message != null) {
+        // ── Success notification ──
+        if (message != null && message!!.startsWith("✅")) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFDCFCE7))
+            ) {
+                Box(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = message!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF166534)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        // Error message
+        if (message != null && !message!!.startsWith("✅")) {
             Text(
                 text = message!!,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (message!!.startsWith("✅")) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.error
+                color = MaterialTheme.colorScheme.error
             )
             Spacer(modifier = Modifier.height(8.dp))
         }
@@ -246,7 +268,7 @@ fun ProposeScreen(
                 }
                 message = null
                 submitProposal(driveLink.trim())
-                message = "✅ Proposal submitted for review!"
+                message = "✅ Proposal submitted! Sent to Admin & Rep for review."
                 // Clear form
                 courseCode = ""
                 driveLink = ""
