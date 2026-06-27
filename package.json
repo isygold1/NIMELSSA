@@ -14,7 +14,7 @@
   "scripts": {
     "start": "npx serve .",
     "lint": "echo 'No linter configured yet'",
-    "cap:init": "npx cap init NIMELSSA vault --web-dir . --npm-client npm",
+    "cap:init": "npx cap init NIMELSSA vault",
     "cap:android": "npx cap add android",
     "cap:sync": "npx cap sync android",
     "cap:build": "cd android && ./gradlew assembleDebug",
