@@ -16,6 +16,7 @@ enum class UserRole { STUDENT, REP, ADMIN }
 data class UserState(
     val isLoggedIn: Boolean = false,
     val isLoading: Boolean = false,
+    val uid: String = "",
     val name: String = "",
     val email: String = "",
     val role: UserRole = UserRole.STUDENT,
@@ -73,6 +74,7 @@ object UserSession {
 
                     _state.value = UserState(
                         isLoggedIn = true,
+                        uid = uid,
                         name = name,
                         email = email,
                         role = role,
@@ -139,6 +141,7 @@ object UserSession {
                             if (writeTask.isSuccessful) {
                                 _state.value = UserState(
                                     isLoggedIn = true,
+                                    uid = uid,
                                     name = name,
                                     email = email,
                                     role = role,
