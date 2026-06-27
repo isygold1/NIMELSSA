@@ -16,10 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -62,14 +59,9 @@ fun AuthScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-    var selectedRole by remember { mutableStateOf(UserRole.REP) }
-    var repLevel by remember { mutableStateOf("200") }
-    var repExpanded by remember { mutableStateOf(false) }
 
     var showForgotPassword by remember { mutableStateOf(false) }
     var resetSent by remember { mutableStateOf(false) }
-
-    val repLevels = listOf("100", "200", "300", "400")
 
     // Auto-dismiss error after 5 seconds
     if (errorMessage != null) {
@@ -122,7 +114,7 @@ fun AuthScreen(
                 localError = "Passwords do not match. Please re-enter."
                 return
             }
-            onSignup(name.trim(), email.trim(), password, selectedRole, repLevel)
+            onSignup(name.trim(), email.trim(), password, UserRole.STUDENT, "")
         } else {
             if (email.isBlank() || !email.contains("@")) {
                 localError = "Please enter a valid email address."
@@ -284,78 +276,6 @@ fun AuthScreen(
             )
 
             Spacer(modifier = Modifier.height(14.dp))
-
-            // Role selector (signup only, hidden for forgot password)
-            if (authMode == AuthMode.SIGNUP && !showForgotPassword) {
-                val roleShape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    SegmentedButton(
-                        selected = selectedRole == UserRole.STUDENT,
-                        onClick = { selectedRole = UserRole.STUDENT },
-                        shape = roleShape,
-                        enabled = !isLoading,
-                        colors = SegmentedButtonDefaults.colors(
-                            activeContainerColor = Color.White,
-                            activeContentColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) { Text("Student", fontWeight = FontWeight.Bold) }
-                    SegmentedButton(
-                        selected = selectedRole == UserRole.REP,
-                        onClick = { selectedRole = UserRole.REP },
-                        shape = roleShape,
-                        enabled = !isLoading,
-                        colors = SegmentedButtonDefaults.colors(
-                            activeContainerColor = Color.White,
-                            activeContentColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) { Text("Class Rep", fontWeight = FontWeight.Bold) }
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Rep level selector
-                if (selectedRole == UserRole.REP) {
-                    ExposedDropdownMenuBox(
-                        expanded = repExpanded,
-                        onExpandedChange = { if (!isLoading) repExpanded = it }
-                    ) {
-                        OutlinedTextField(
-                            value = "${repLevel}L Representative",
-                            onValueChange = {},
-                            readOnly = true,
-                            enabled = !isLoading,
-                            label = { Text("Assigned Class Rep Jurisdiction") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = repExpanded) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = Color(0xFF23314F),
-                                unfocusedContainerColor = Color(0xFF1C273E),
-                                focusedContainerColor = Color(0xFF1C273E),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        ExposedDropdownMenu(
-                            expanded = repExpanded,
-                            onDismissRequest = { repExpanded = false }
-                        ) {
-                            repLevels.forEach { level ->
-                                DropdownMenuItem(
-                                    text = { Text("${level}L Representative") },
-                                    onClick = {
-                                        repLevel = level
-                                        repExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(14.dp))
-                }
-            }
 
             // Password
             OutlinedTextField(
