@@ -1,5 +1,8 @@
 package com.nimelssa.vault.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -7,11 +10,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -30,10 +35,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.google.firebase.ktx.Firebase
+import com.google.firebase.storage.ktx.storage
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,6 +57,35 @@ fun ProposeScreen(
     var resourceType by remember { mutableStateOf("Lecture Notes") }
     var notes by remember { mutableStateOf("") }
     var uploadMode by remember { mutableStateOf("link") }
+
+    // File upload state
+    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedFileName by remember { mutableStateOf("") }
+    var isUploading by remember { mutableStateOf(false) }
+    var uploadMessage by remember { mutableStateOf<String?>(null) }
+
+    val context = LocalContext.current
+    val storage = remember { Firebase.storage }
+
+    // File picker launcher
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            selectedFileUri = uri
+            // Extract file name from URI
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            if (cursor != null && cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0) {
+                    selectedFileName = cursor.getString(nameIndex)
+                }
+                cursor.close()
+            } else {
+                selectedFileName = uri.lastPathSegment ?: "document"
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -84,7 +124,7 @@ fun ProposeScreen(
                     activeContainerColor = MaterialTheme.colorScheme.primary,
                     activeContentColor = MaterialTheme.colorScheme.onPrimary
                 )
-            ) { Text("Local Document") }
+            ) { Text("Upload Document") }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -167,7 +207,7 @@ fun ProposeScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // URL / File
+        // URL / File upload
         if (uploadMode == "link") {
             OutlinedTextField(
                 value = "",
@@ -179,12 +219,41 @@ fun ProposeScreen(
                 shape = RoundedCornerShape(8.dp)
             )
         } else {
+            // Upload button
             Button(
-                onClick = { /* File picker would go here */ },
+                onClick = { filePickerLauncher.launch("*/*") },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(8.dp),
+                enabled = !isUploading,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (selectedFileUri != null) Color(0xFF16A34A)
+                                     else MaterialTheme.colorScheme.primary
+                )
             ) {
-                Text("📄 Tap to load PDF or Image Scan copy")
+                if (isUploading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        if (selectedFileUri != null) "📄 $selectedFileName (tap to change)"
+                        else "📄 Tap to Upload Document",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Upload message
+            if (uploadMessage != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = uploadMessage!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (uploadMessage!!.startsWith("✅")) Color(0xFF4ADE80)
+                            else Color(0xFFEF4444)
+                )
             }
         }
 
@@ -211,8 +280,14 @@ fun ProposeScreen(
                 val category = when {
                     courseCode.contains("BIO") -> "BIOLOGY"
                     courseCode.contains("CHM") -> "CHEMISTRY"
+                    courseCode.contains("PHY") -> "PHYSICS"
+                    courseCode.contains("BCH") -> "BIOCHEMISTRY"
+                    courseCode.contains("MLS") -> "MEDICAL LABORATORY SCIENCE"
+                    courseCode.contains("GST") -> "GENERAL STUDIES"
+                    courseCode.contains("STA") -> "MATHEMATICS"
                     else -> "MEDICAL LABORATORY SCIENCE"
                 }
+
                 val newCourse = Course(
                     code = courseCode.ifEmpty { "UNCODED" },
                     name = "$courseCode - Reference Material",
@@ -223,6 +298,26 @@ fun ProposeScreen(
                     isPending = true
                 )
                 CourseRepository.addCourse(newCourse)
+
+                // Upload file to Firebase Storage if selected
+                if (selectedFileUri != null && uploadMode == "file") {
+                    isUploading = true
+                    uploadMessage = null
+                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                    val fileName = "${courseCode}_${timestamp}_${selectedFileName}"
+                    val ref = storage.reference.child("proposals/$fileName")
+
+                    ref.putFile(selectedFileUri!!)
+                        .addOnSuccessListener {
+                            isUploading = false
+                            uploadMessage = "✅ File uploaded successfully!"
+                        }
+                        .addOnFailureListener { e ->
+                            isUploading = false
+                            uploadMessage = "❌ Upload failed: ${e.message}"
+                        }
+                }
+
                 onProposed(newCourse)
             },
             modifier = Modifier

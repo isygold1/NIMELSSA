@@ -184,4 +184,58 @@ object UserSession {
         _state.value = UserState()
         Log.d(TAG, "Signed out")
     }
+
+    // ───── PASSWORD RESET ─────────────────────────────────────────────────
+
+    fun sendPasswordReset(email: String) {
+        _state.value = _state.value.copy(isLoading = true, errorMessage = null)
+        auth.sendPasswordResetEmail(email)
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    _state.value = _state.value.copy(
+                        isLoading = false,
+                        errorMessage = null
+                    )
+                    Log.d(TAG, "Password reset email sent to: $email")
+                } else {
+                    val msg = task.exception?.message ?: "Failed to send reset email"
+                    _state.value = _state.value.copy(isLoading = false, errorMessage = msg)
+                    Log.e(TAG, "Password reset failed: $msg")
+                }
+            }
+    }
+
+    // ───── UPDATE EMAIL ───────────────────────────────────────────────────
+
+    fun updateEmail(newEmail: String, onResult: (Boolean, String?) -> Unit) {
+        val user = auth.currentUser ?: run {
+            onResult(false, "No authenticated user")
+            return
+        }
+
+        user.updateEmail(newEmail)
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    // Also update Firestore
+                    firestore.collection("users").document(user.uid)
+                        .update("email", newEmail)
+                        .addOnCompleteListener { firestoreTask ->
+                            if (firestoreTask.isSuccessful) {
+                                _state.value = _state.value.copy(email = newEmail)
+                                onResult(true, null)
+                                Log.d(TAG, "Email updated to: $newEmail")
+                            } else {
+                                val msg = firestoreTask.exception?.message
+                                    ?: "Firestore email update failed"
+                                onResult(false, msg)
+                                Log.e(TAG, "Firestore email update failed: $msg")
+                            }
+                        }
+                } else {
+                    val msg = task.exception?.message ?: "Email update failed"
+                    onResult(false, msg)
+                    Log.e(TAG, "Firebase Auth email update failed: $msg")
+                }
+            }
+    }
 }

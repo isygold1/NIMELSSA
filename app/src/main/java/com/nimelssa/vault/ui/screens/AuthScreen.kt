@@ -27,6 +27,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,15 +54,20 @@ fun AuthScreen(
     onToggleMode: (AuthMode) -> Unit,
     onLogin: (email: String, password: String) -> Unit,
     onSignup: (name: String, email: String, password: String, role: UserRole, repLevel: String) -> Unit,
+    onForgotPassword: (email: String) -> Unit,
     onClearError: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
     var selectedRole by remember { mutableStateOf(UserRole.REP) }
     var repLevel by remember { mutableStateOf("200") }
     var repExpanded by remember { mutableStateOf(false) }
+
+    var showForgotPassword by remember { mutableStateOf(false) }
+    var resetSent by remember { mutableStateOf(false) }
 
     val repLevels = listOf("100", "200", "300", "400")
 
@@ -79,12 +85,25 @@ fun AuthScreen(
     // Clear local error when mode changes
     LaunchedEffect(authMode) {
         localError = null
+        resetSent = false
+        showForgotPassword = false
     }
 
     val displayError = localError ?: errorMessage
 
     fun validateAndSubmit() {
         localError = null
+
+        if (showForgotPassword) {
+            if (email.isBlank() || !email.contains("@")) {
+                localError = "Please enter your email address first."
+                return
+            }
+            onForgotPassword(email.trim())
+            resetSent = true
+            showForgotPassword = false
+            return
+        }
 
         if (authMode == AuthMode.SIGNUP) {
             if (name.isBlank()) {
@@ -97,6 +116,10 @@ fun AuthScreen(
             }
             if (password.length < 6) {
                 localError = "Password must be at least 6 characters."
+                return
+            }
+            if (password != confirmPassword) {
+                localError = "Passwords do not match. Please re-enter."
                 return
             }
             onSignup(name.trim(), email.trim(), password, selectedRole, repLevel)
@@ -136,38 +159,57 @@ fun AuthScreen(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = if (authMode == AuthMode.LOGIN) "Access Central Academic Repository"
-                       else "Register Account Verification Pipeline",
+                text = when {
+                    showForgotPassword -> "Reset Your Password"
+                    authMode == AuthMode.LOGIN -> "Access Central Academic Repository"
+                    else -> "Register Account Verification Pipeline"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFF94A3B8)
             )
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Segmented control
-            val authShape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = authMode == AuthMode.LOGIN,
-                    onClick = { onToggleMode(AuthMode.LOGIN) },
-                    shape = authShape,
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Color.White,
-                        activeContentColor = MaterialTheme.colorScheme.primary
-                    )
-                ) { Text("Sign In", fontWeight = FontWeight.Bold) }
-                SegmentedButton(
-                    selected = authMode == AuthMode.SIGNUP,
-                    onClick = { onToggleMode(AuthMode.SIGNUP) },
-                    shape = authShape,
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Color.White,
-                        activeContentColor = MaterialTheme.colorScheme.primary
-                    )
-                ) { Text("Sign Up", fontWeight = FontWeight.Bold) }
+            // Segmented control (hidden during forgot password)
+            if (!showForgotPassword) {
+                val authShape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        selected = authMode == AuthMode.LOGIN,
+                        onClick = { onToggleMode(AuthMode.LOGIN) },
+                        shape = authShape,
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = Color.White,
+                            activeContentColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) { Text("Sign In", fontWeight = FontWeight.Bold) }
+                    SegmentedButton(
+                        selected = authMode == AuthMode.SIGNUP,
+                        onClick = { onToggleMode(AuthMode.SIGNUP) },
+                        shape = authShape,
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = Color.White,
+                            activeContentColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) { Text("Sign Up", fontWeight = FontWeight.Bold) }
+                }
+                Spacer(modifier = Modifier.height(20.dp))
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            // Reset sent confirmation
+            if (resetSent) {
+                Text(
+                    text = "✅ Password reset link sent to your email! Check your inbox.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF4ADE80),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0A2E1A).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                        .padding(12.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
             // Error message
             if (displayError != null) {
@@ -184,8 +226,16 @@ fun AuthScreen(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
+            // Forgot password — back button
+            if (showForgotPassword) {
+                TextButton(onClick = { showForgotPassword = false }) {
+                    Text("← Back to Sign In", color = Color(0xFF94A3B8))
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
             // Name field (signup only)
-            if (authMode == AuthMode.SIGNUP) {
+            if (authMode == AuthMode.SIGNUP && !showForgotPassword) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; localError = null },
@@ -235,86 +285,90 @@ fun AuthScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Role selector
-            val roleShape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = selectedRole == UserRole.STUDENT,
-                    onClick = { selectedRole = UserRole.STUDENT },
-                    shape = roleShape,
-                    enabled = !isLoading,
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Color.White,
-                        activeContentColor = MaterialTheme.colorScheme.primary
-                    )
-                ) { Text("Student", fontWeight = FontWeight.Bold) }
-                SegmentedButton(
-                    selected = selectedRole == UserRole.REP,
-                    onClick = { selectedRole = UserRole.REP },
-                    shape = roleShape,
-                    enabled = !isLoading,
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Color.White,
-                        activeContentColor = MaterialTheme.colorScheme.primary
-                    )
-                ) { Text("Class Rep", fontWeight = FontWeight.Bold) }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Rep level selector
-            if (selectedRole == UserRole.REP) {
-                ExposedDropdownMenuBox(
-                    expanded = repExpanded,
-                    onExpandedChange = { if (!isLoading) repExpanded = it }
-                ) {
-                    OutlinedTextField(
-                        value = "${repLevel}L Representative",
-                        onValueChange = {},
-                        readOnly = true,
+            // Role selector (signup only, hidden for forgot password)
+            if (authMode == AuthMode.SIGNUP && !showForgotPassword) {
+                val roleShape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        selected = selectedRole == UserRole.STUDENT,
+                        onClick = { selectedRole = UserRole.STUDENT },
+                        shape = roleShape,
                         enabled = !isLoading,
-                        label = { Text("Assigned Class Rep Jurisdiction") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = repExpanded) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = Color(0xFF23314F),
-                            unfocusedContainerColor = Color(0xFF1C273E),
-                            focusedContainerColor = Color(0xFF1C273E),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                    ExposedDropdownMenu(
-                        expanded = repExpanded,
-                        onDismissRequest = { repExpanded = false }
-                    ) {
-                        repLevels.forEach { level ->
-                            DropdownMenuItem(
-                                text = { Text("${level}L Representative") },
-                                onClick = {
-                                    repLevel = level
-                                    repExpanded = false
-                                }
-                            )
-                        }
-                    }
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = Color.White,
+                            activeContentColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) { Text("Student", fontWeight = FontWeight.Bold) }
+                    SegmentedButton(
+                        selected = selectedRole == UserRole.REP,
+                        onClick = { selectedRole = UserRole.REP },
+                        shape = roleShape,
+                        enabled = !isLoading,
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = Color.White,
+                            activeContentColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) { Text("Class Rep", fontWeight = FontWeight.Bold) }
                 }
                 Spacer(modifier = Modifier.height(14.dp))
+
+                // Rep level selector
+                if (selectedRole == UserRole.REP) {
+                    ExposedDropdownMenuBox(
+                        expanded = repExpanded,
+                        onExpandedChange = { if (!isLoading) repExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = "${repLevel}L Representative",
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = !isLoading,
+                            label = { Text("Assigned Class Rep Jurisdiction") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = repExpanded) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = Color(0xFF23314F),
+                                unfocusedContainerColor = Color(0xFF1C273E),
+                                focusedContainerColor = Color(0xFF1C273E),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = repExpanded,
+                            onDismissRequest = { repExpanded = false }
+                        ) {
+                            repLevels.forEach { level ->
+                                DropdownMenuItem(
+                                    text = { Text("${level}L Representative") },
+                                    onClick = {
+                                        repLevel = level
+                                        repExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
             }
 
             // Password
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it; localError = null },
-                label = { Text("Secure Password") },
+                label = {
+                    Text(if (showForgotPassword) "Registered Email Password (to verify you)"
+                         else "Secure Password")
+                },
                 placeholder = { Text("••••••••") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                enabled = !isLoading,
+                enabled = !isLoading && !showForgotPassword,
                 visualTransformation = PasswordVisualTransformation(),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -330,7 +384,60 @@ fun AuthScreen(
                 shape = RoundedCornerShape(8.dp)
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Confirm password (signup only)
+            if (authMode == AuthMode.SIGNUP && !showForgotPassword) {
+                OutlinedTextField(
+                    value = confirmPassword,
+                    onValueChange = { confirmPassword = it; localError = null },
+                    label = { Text("Retype Password for Surety") },
+                    placeholder = { Text("••••••••") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !isLoading,
+                    visualTransformation = PasswordVisualTransformation(),
+                    isError = confirmPassword.isNotEmpty() && confirmPassword != password,
+                    supportingText = if (confirmPassword.isNotEmpty() && confirmPassword != password) {
+                        { Text("Passwords do not match", color = Color(0xFFEF4444)) }
+                    } else null,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = Color(0xFF23314F),
+                        unfocusedContainerColor = Color(0xFF1C273E),
+                        focusedContainerColor = Color(0xFF1C273E),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedLabelColor = Color(0xFFCBD5E1),
+                        unfocusedLabelColor = Color(0xFFCBD5E1),
+                        cursorColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+
+            // Forgot password link (login mode only)
+            if (authMode == AuthMode.LOGIN && !showForgotPassword) {
+                TextButton(
+                    onClick = {
+                        if (email.isBlank() || !email.contains("@")) {
+                            localError = "Enter your email first, then tap Forgot Password."
+                        } else {
+                            showForgotPassword = true
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "🔑 Forgot Password?",
+                        color = Color(0xFF94A3B8),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+            }
 
             // Submit button
             Button(
@@ -352,8 +459,11 @@ fun AuthScreen(
                     )
                 } else {
                     Text(
-                        text = if (authMode == AuthMode.LOGIN) "Authenticate Session Link"
-                               else "Create Verified Account",
+                        text = when {
+                            showForgotPassword -> "Send Reset Link"
+                            authMode == AuthMode.LOGIN -> "Authenticate Session Link"
+                            else -> "Create Verified Account"
+                        },
                         fontWeight = FontWeight.Bold
                     )
                 }

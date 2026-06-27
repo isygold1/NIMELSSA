@@ -101,6 +101,9 @@ fun MainApp() {
             onSignup = { name, email, password, role, repLevel ->
                 UserSession.signUp(name, email, password, role, repLevel)
             },
+            onForgotPassword = { email ->
+                UserSession.sendPasswordReset(email)
+            },
             onClearError = { UserSession.clearError() }
         )
         return
