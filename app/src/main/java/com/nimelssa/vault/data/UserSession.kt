@@ -1,6 +1,8 @@
 package com.nimelssa.vault.data
 
 import android.util.Log
+import com.google.firebase.auth.AuthCredential
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
@@ -209,6 +211,70 @@ object UserSession {
                     _state.value = _state.value.copy(isLoading = false, errorMessage = msg)
                     Log.e(TAG, "Password reset failed: $msg")
                 }
+            }
+    }
+
+    // ───── DELETE ACCOUNT ─────────────────────────────────────────────────
+
+    /**
+     * Deletes the user's Firebase Auth account and Firestore profile.
+     * Requires the user's current password for re-authentication.
+     *
+     * @param password Current password to re-authenticate before deletion.
+     * @param onResult Callback with (success, errorMessage).
+     */
+    fun deleteAccount(password: String, onResult: (Boolean, String?) -> Unit) {
+        val user = auth.currentUser ?: run {
+            onResult(false, "No authenticated user")
+            return
+        }
+
+        _state.value = _state.value.copy(isLoading = true, errorMessage = null)
+
+        // 1. Re-authenticate with password (required for account deletion)
+        val credential: AuthCredential = EmailAuthProvider.getCredential(
+            user.email ?: "", password
+        )
+
+        user.reauthenticate(credential)
+            .addOnCompleteListener { reauthTask ->
+                if (!reauthTask.isSuccessful) {
+                    val msg = reauthTask.exception?.message ?: "Re-authentication failed"
+                    _state.value = _state.value.copy(isLoading = false, errorMessage = msg)
+                    onResult(false, msg)
+                    Log.e(TAG, "Re-auth failed for account deletion: $msg")
+                    return@addOnCompleteListener
+                }
+
+                // 2. Delete Firestore user document
+                firestore.collection("users").document(user.uid)
+                    .delete()
+                    .addOnCompleteListener { firestoreTask ->
+                        if (!firestoreTask.isSuccessful) {
+                            Log.w(TAG, "Firestore doc deletion failed, continuing...")
+                        }
+
+                        // 3. Delete Firebase Auth user
+                        user.delete()
+                            .addOnCompleteListener { deleteTask ->
+                                if (deleteTask.isSuccessful) {
+                                    // 4. Sign out and reset state
+                                    auth.signOut()
+                                    OfflineManager.clearAll()
+                                    _state.value = UserState()
+                                    Log.d(TAG, "Account deleted successfully")
+                                    onResult(true, null)
+                                } else {
+                                    val msg = deleteTask.exception?.message
+                                        ?: "Account deletion failed"
+                                    _state.value = _state.value.copy(
+                                        isLoading = false, errorMessage = msg
+                                    )
+                                    onResult(false, msg)
+                                    Log.e(TAG, "Auth delete failed: $msg")
+                                }
+                            }
+                    }
             }
     }
 
