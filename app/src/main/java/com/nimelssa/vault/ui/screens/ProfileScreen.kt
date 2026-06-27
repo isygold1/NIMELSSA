@@ -352,7 +352,7 @@ private fun DeleteSuccessScreen(onDone: () -> Unit) {
             .background(Color(0xFF0F172A))
             .padding(32.dp),
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-        verticalArrangement = androidx.compose.ui.Arrangement.Center
+        verticalArrangement = Arrangement.Center
     ) {
         Text(
             text = "Account Deleted",

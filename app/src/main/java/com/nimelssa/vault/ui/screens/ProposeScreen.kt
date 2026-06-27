@@ -354,12 +354,14 @@ fun ProposeScreen(
                     val ref = storage.reference.child("materials/$fileName")
 
                     ref.putFile(selectedFileUri!!)
-                        .addOnSuccessListener {
-                            ref.downloadUrl.addOnSuccessListener { downloadUri ->
-                                isUploading = false
-                                uploadMessage = "✅ Uploaded! Submitting proposal..."
-                                submitProposal(downloadUri.toString())
-                            }
+                        .continueWithTask { task ->
+                            if (!task.isSuccessful) throw task.exception!!
+                            ref.downloadUrl
+                        }
+                        .addOnSuccessListener { downloadUri ->
+                            isUploading = false
+                            uploadMessage = "✅ Uploaded! Submitting proposal..."
+                            submitProposal(downloadUri.toString())
                         }
                         .addOnFailureListener { e ->
                             isUploading = false
