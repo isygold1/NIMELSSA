@@ -185,7 +185,7 @@ fun MainApp() {
                 composable(Routes.PROPOSE) {
                     ProposeScreen(
                         onProposed = {
-                            navController.navigate(Routes.ADMIN) {
+                            navController.navigate(Routes.WORKSPACE) {
                                 popUpTo(Routes.WORKSPACE) { saveState = true }
                             }
                         }

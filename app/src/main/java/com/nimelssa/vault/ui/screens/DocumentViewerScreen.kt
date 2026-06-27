@@ -417,7 +417,7 @@ private fun ResourceCard(
 /**
  * Resolves a resource URL for display in the WebView.
  * For PDF links, wraps them in Google Docs viewer for inline rendering.
- * For Google Drive links, adds ?embedded=true for inline display.
+ * For Google Drive links, extracts the file ID and uses the embed preview.
  * For local files (offline), returns a file:// URI.
  */
 private fun resolveResourceUrl(url: String): String {
@@ -426,23 +426,27 @@ private fun resolveResourceUrl(url: String): String {
         url.startsWith("file://") -> url
         url.startsWith("/") -> "file://$url"
 
+        // Google Drive file link — extract file ID and use /preview
+        url.contains("drive.google.com/file/d/") -> {
+            val id = url.substringAfter("/file/d/").substringBefore("/").substringBefore("?")
+            "https://drive.google.com/file/d/$id/preview"
+        }
+
+        // Google Drive folder link — not directly embeddable, show Google Drive viewer
+        url.contains("drive.google.com/drive/folders/") -> {
+            val id = url.substringAfter("/drive/folders/").substringBefore("?").substringBefore("/")
+            "https://drive.google.com/embeddedfolderview?id=$id"
+        }
+
+        // Other Google Drive links — add embedded mode
+        url.contains("drive.google.com") && !url.contains("preview") -> {
+            "$url&embedded=true".replace("?&", "?").replace("&&", "&")
+        }
+
         // PDF URL — wrap in Google Docs viewer
         url.contains(".pdf", ignoreCase = true) ||
         url.contains("pdf?", ignoreCase = true) -> {
             "https://docs.google.com/viewer?url=${android.net.Uri.encode(url)}&embedded=true"
-        }
-
-        // Google Drive file link — add ?embedded=true or convert to preview
-        url.contains("drive.google.com/file/d/") -> {
-            // Convert to direct preview: https://drive.google.com/file/d/{ID}/preview
-            url.replace("/view", "/preview")
-                .replace("?usp=sharing", "")
-                .replace("&usp=sharing", "")
-        }
-
-        // Google Drive view link
-        url.contains("drive.google.com") && !url.contains("preview") -> {
-            "$url&embedded=true".replace("?&", "?").replace("&&", "&")
         }
 
         // Everything else — load directly
