@@ -193,7 +193,12 @@ fun MainApp() {
                 }
 
                 composable(Routes.ADMIN) {
-                    AdminScreen(repLevel = userState.repLevel)
+                    AdminScreen(
+                        repLevel = userState.repLevel,
+                        onPreview = { course ->
+                            navController.navigate(Routes.viewerRoute(course.code))
+                        }
+                    )
                 }
 
                 composable(

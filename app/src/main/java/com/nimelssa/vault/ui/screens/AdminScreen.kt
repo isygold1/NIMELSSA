@@ -53,6 +53,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AdminScreen(
     repLevel: String,
+    onPreview: (Course) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val user by UserSession.state.collectAsState()
@@ -113,19 +114,72 @@ fun AdminScreen(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1917))
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
+                        // Course code + name
                         Text(
                             text = "${pending.code} — ${pending.name}",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White
                         )
+                        // Meta info
                         Text(
-                            text = "Category: ${pending.category} • ${pending.displaySemester}",
+                            text = "${pending.category} • ${pending.displaySemester}",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color(0xFF94A3B8)
                         )
+                        // Submitted by
+                        if (pending.submittedBy.isNotBlank()) {
+                            Text(
+                                text = "Submitted by: ${pending.submittedBy}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF6B7280)
+                            )
+                        }
+
+                        // ── Resource info ──
+                        Spacer(modifier = Modifier.height(6.dp))
+                        if (pending.lectureNotesUrl.isNotBlank()) {
+                            Text(
+                                text = "📖 Notes: ${truncateUrl(pending.lectureNotesUrl)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF93C5FD),
+                                maxLines = 1
+                            )
+                        }
+                        if (pending.pastQuestionsUrl.isNotBlank()) {
+                            Text(
+                                text = "📝 PQs: ${truncateUrl(pending.pastQuestionsUrl)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF93C5FD),
+                                maxLines = 1
+                            )
+                        }
+                        if (pending.notes.isNotBlank()) {
+                            Text(
+                                text = "📌 ${pending.notes}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFFD1D5DB),
+                                maxLines = 2
+                            )
+                        }
+
                         Spacer(modifier = Modifier.height(10.dp))
+
+                        // ── Action buttons ──
                         Row(modifier = Modifier.fillMaxWidth()) {
+                            // Preview button
+                            if (pending.hasResources) {
+                                Button(
+                                    onClick = { onPreview(pending) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF6366F1)
+                                    )
+                                ) { Text("👁️ Preview", fontWeight = FontWeight.Bold) }
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            // Approve button
                             Button(
                                 onClick = {
                                     CourseRepository.approveCourse(pending.code)
@@ -143,7 +197,8 @@ fun AdminScreen(
                                 shape = RoundedCornerShape(8.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
                             ) { Text("✅ Approve", fontWeight = FontWeight.Bold) }
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            // Reject button
                             Button(
                                 onClick = {
                                     scope.launch {
@@ -397,5 +452,18 @@ private fun AddCourseForm(
                 Text("Add to Vault", fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+/** Truncate a URL for display in the proposal card. */
+private fun truncateUrl(url: String): String {
+    return try {
+        val u = java.net.URL(url)
+        val host = u.host.removePrefix("www.")
+        val path = u.path
+        if (path.length > 25) "${host}...${path.takeLast(15)}"
+        else "${host}${path}"
+    } catch (_: Exception) {
+        if (url.length > 35) url.take(32) + "..." else url
     }
 }
