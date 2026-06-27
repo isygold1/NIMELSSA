@@ -9,23 +9,29 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 
 /**
  * Scans Google Drive links (files or folders) using the Drive API v3
  * with a simple API key (no OAuth required for public resources).
  *
- * The folder must be set to "Anyone with the link can view" for
- * the API key to work without authentication.
+ * ## Prerequisites (Google Cloud Console)
+ * 1. Enable **Google Drive API** for your project
+ * 2. Create an API key restricted to your Android app `com.nimelssa.vault`
+ * 3. Set the API key in `res/values/secrets.xml` as `drive_api_key`
+ *
+ * ## Folder Requirements
+ * The Drive folder must be set to **"Anyone with the link can view"**
+ * for the API key to work without OAuth.
  */
 object DriveScanner {
     private const val TAG = "DriveScanner"
     private const val API_BASE = "https://www.googleapis.com/drive/v3"
     private const val FIELDS = "files(id,name,mimeType,webViewLink,size)"
 
-    // Populated from secrets.xml via BuildConfig
     private var apiKey: String = ""
 
-    /** Set the API key at app startup. */
+    /** Set the API key at app startup (called from NimelssaApp). */
     fun init(key: String) {
         apiKey = key
     }
@@ -48,7 +54,7 @@ object DriveScanner {
 
     /**
      * Scan a Drive link and return all files found.
-     * Handles both single file links and folder links.
+     * Handles both single-file links and folder links.
      */
     suspend fun scanLink(link: String): ScanResult = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
@@ -58,34 +64,43 @@ object DriveScanner {
         try {
             val extractedId = extractFileOrFolderId(link)
             if (extractedId == null) {
-                return@withContext ScanResult(error = "Could not parse Drive link. Ensure it's a valid Google Drive URL.")
+                return@withContext ScanResult(
+                    error = "Could not parse Drive link. Ensure it's a valid Google Drive URL."
+                )
             }
 
-            // First, check what this ID is (file or folder)
-            val metadata = getMetadata(extractedId)
-            if (metadata.error != null) {
-                return@withContext ScanResult(error = metadata.error)
+            // First, get metadata to see if this is a file or folder
+            val meta = getMetadata(extractedId)
+            if (meta.error != null) {
+                val msg = when {
+                    meta.error.contains("notFound", ignoreCase = true) ->
+                        "File/folder not found or not publicly accessible. Set sharing to 'Anyone with the link'."
+                    meta.error.contains("key", ignoreCase = true) ||
+                    meta.error.contains("access", ignoreCase = true) ||
+                    meta.error.contains("403", ignoreCase = true) ->
+                        "Google Drive API error. Ensure Drive API is ENABLED in Google Cloud Console."
+                    else -> meta.error
+                }
+                return@withContext ScanResult(error = msg)
             }
 
-            if (metadata.isFolder) {
-                // List all files in the folder
+            if (meta.isFolder) {
                 val files = listFolderContents(extractedId)
                 return@withContext ScanResult(
                     isFolder = true,
-                    folderName = metadata.name,
+                    folderName = meta.name,
                     files = files
                 )
             } else {
-                // Single file
                 return@withContext ScanResult(
                     isFolder = false,
-                    folderName = metadata.name,
+                    folderName = meta.name,
                     files = listOf(
                         DriveFileInfo(
                             id = extractedId,
-                            name = metadata.name,
-                            mimeType = metadata.mimeType,
-                            webViewLink = metadata.webViewLink
+                            name = meta.name,
+                            mimeType = meta.mimeType,
+                            webViewLink = meta.webViewLink
                         )
                     )
                 )
@@ -97,21 +112,25 @@ object DriveScanner {
     }
 
     /**
-     * Get metadata for a file or folder by ID.
+     * Get metadata for a file or folder by its Drive ID.
      */
     private fun getMetadata(id: String): MetadataResult {
-        val url = URL("$API_BASE/files/$id?key=$apiKey&fields=id,name,mimeType,webViewLink,size")
+        val urlStr = buildUrl("$API_BASE/files/$id", mapOf(
+            "key" to apiKey,
+            "fields" to "id,name,mimeType,webViewLink,size"
+        ))
+        val url = URL(urlStr)
         val conn = url.openConnection() as HttpURLConnection
         conn.requestMethod = "GET"
-        conn.connectTimeout = 10000
-        conn.readTimeout = 10000
+        conn.connectTimeout = 15000
+        conn.readTimeout = 15000
 
         try {
             val responseCode = conn.responseCode
             if (responseCode != 200) {
                 val errorBody = readStream(conn.errorStream ?: conn.inputStream)
                 val errorMsg = parseError(errorBody)
-                return MetadataResult(error = errorMsg)
+                return MetadataResult(error = "[HTTP $responseCode] $errorMsg")
             }
 
             val json = JSONObject(readStream(conn.inputStream))
@@ -132,27 +151,39 @@ object DriveScanner {
 
     /**
      * List all files (non-folder) inside a folder.
+     * Uses URL-encoded query parameters for the Drive API.
      */
     private fun listFolderContents(folderId: String): List<DriveFileInfo> {
         val files = mutableListOf<DriveFileInfo>()
         var pageToken: String? = null
 
         do {
-            val query = "'$folderId'+in+parents+and+mimeType+ne+'application/vnd.google-apps.folder'"
-            val urlStr = "$API_BASE/files?q=$query&fields=nextPageToken,$FIELDS&key=$apiKey" +
-                    (pageToken?.let { "&pageToken=$it" } ?: "")
+            // Build the Drive API query:
+            //   '{folderId}' in parents and mimeType != 'application/vnd.google-apps.folder'
+            // The entire q parameter value must be URL-encoded.
+            val query = "'$folderId' in parents and mimeType != 'application/vnd.google-apps.folder'"
 
+            val params = mutableMapOf(
+                "q" to query,
+                "fields" to "nextPageToken,$FIELDS",
+                "key" to apiKey
+            )
+            if (pageToken != null) {
+                params["pageToken"] = pageToken!!
+            }
+
+            val urlStr = buildUrl("$API_BASE/files", params)
             val url = URL(urlStr)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
-            conn.connectTimeout = 10000
-            conn.readTimeout = 10000
+            conn.connectTimeout = 15000
+            conn.readTimeout = 15000
 
             try {
                 val responseCode = conn.responseCode
                 if (responseCode != 200) {
                     val errorBody = readStream(conn.errorStream ?: conn.inputStream)
-                    Log.e(TAG, "Failed to list folder: $errorBody")
+                    Log.e(TAG, "Failed to list folder contents: HTTP $responseCode — $errorBody")
                     break
                 }
 
@@ -172,6 +203,7 @@ object DriveScanner {
                 }
 
                 pageToken = json.optString("nextPageToken", null)
+                if (pageToken?.isBlank() == true) pageToken = null
             } finally {
                 conn.disconnect()
             }
@@ -181,18 +213,32 @@ object DriveScanner {
     }
 
     /**
+     * Build a properly URL-encoded query string from a base URL and parameters.
+     * This is critical — Drive API queries contain quotes and special chars
+     * that MUST be percent-encoded.
+     */
+    private fun buildUrl(base: String, params: Map<String, String>): String {
+        if (params.isEmpty()) return base
+        val queryString = params.entries.joinToString("&") { (key, value) ->
+            "${URLEncoder.encode(key, "UTF-8")}=${URLEncoder.encode(value, "UTF-8")}"
+        }
+        return "$base?$queryString"
+    }
+
+    // ── URL / ID parsing ──
+
+    /**
      * Extract file or folder ID from various Google Drive URL formats:
      * - https://drive.google.com/file/d/FILE_ID/view
      * - https://drive.google.com/drive/folders/FOLDER_ID
      * - https://drive.google.com/drive/mobile/folders/FOLDER_ID
      * - https://drive.google.com/open?id=ID
      * - https://docs.google.com/document/d/DOC_ID
-     * - Just a raw ID
+     * - Just a raw ID (10+ alphanumeric chars)
      */
     fun extractFileOrFolderId(link: String): String? {
         val trimmed = link.trim()
 
-        // Try various URL patterns
         val patterns = listOf(
             Regex("""/file/d/([a-zA-Z0-9_-]+)"""),
             Regex("""/folders/([a-zA-Z0-9_-]+)"""),
@@ -209,7 +255,7 @@ object DriveScanner {
             }
         }
 
-        // Maybe it's just a raw ID (alphanumeric + underscore + dash, at least 10 chars)
+        // Raw ID fallback
         if (trimmed.matches(Regex("^[a-zA-Z0-9_-]{10,}$"))) {
             return trimmed
         }
@@ -218,16 +264,17 @@ object DriveScanner {
     }
 
     /**
-     * Build a direct URL for a file to be used in WebView.
-     * For folders, returns the standard folder URL.
+     * Build a human-readable WebView URL for a file or folder.
      */
-    fun buildDirectUrl(fileId: String, mimeType: String? = null, isFolder: Boolean = false): String {
-        if (isFolder) {
-            return "https://drive.google.com/drive/folders/$fileId"
+    fun buildDirectUrl(fileId: String, isFolder: Boolean = false): String {
+        return if (isFolder) {
+            "https://drive.google.com/drive/folders/$fileId"
+        } else {
+            "https://drive.google.com/file/d/$fileId/preview"
         }
-        // File link with /preview for better viewing
-        return "https://drive.google.com/file/d/$fileId/preview"
     }
+
+    // ── Internal models / helpers ──
 
     private data class MetadataResult(
         val id: String = "",
@@ -247,7 +294,19 @@ object DriveScanner {
         return try {
             val json = JSONObject(body)
             val error = json.optJSONObject("error")
-            error?.optString("message", "Unknown API error") ?: "Unknown API error"
+            val code = error?.optInt("code", 0) ?: 0
+            val msg = error?.optString("message", "Unknown API error") ?: "Unknown API error"
+            val status = error?.optString("status", "") ?: ""
+
+            when {
+                status == "PERMISSION_DENIED" || code == 403 ->
+                    "Permission denied. Enable Google Drive API in Google Cloud Console and make sure the folder is public."
+                status == "NOT_FOUND" || code == 404 ->
+                    "File/folder not found. Check that the link is correct and sharing is set to 'Anyone with the link'."
+                status == "QUOTA_EXCEEDED" || code == 429 ->
+                    "API rate limit exceeded. Try again later."
+                else -> "$msg (HTTP $code)"
+            }
         } catch (_: Exception) {
             "Failed to access Drive. Check that the folder is publicly accessible."
         }
