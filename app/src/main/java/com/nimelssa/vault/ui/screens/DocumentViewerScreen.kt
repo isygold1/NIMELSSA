@@ -417,7 +417,7 @@ private fun ResourceCard(
 /**
  * Resolves a resource URL for display in the WebView.
  * For PDF links, wraps them in Google Docs viewer for inline rendering.
- * For Google Drive links, extracts the file ID and uses the embed preview.
+ * For Google Drive links, extracts the file/folder ID and uses the correct format.
  * For local files (offline), returns a file:// URI.
  */
 private fun resolveResourceUrl(url: String): String {
@@ -432,10 +432,10 @@ private fun resolveResourceUrl(url: String): String {
             "https://drive.google.com/file/d/$id/preview"
         }
 
-        // Google Drive folder link — not directly embeddable, show Google Drive viewer
-        url.contains("drive.google.com/drive/folders/") -> {
-            val id = url.substringAfter("/drive/folders/").substringBefore("?").substringBefore("/")
-            "https://drive.google.com/embeddedfolderview?id=$id"
+        // Google Drive folder link — handles both /drive/folders/ and /drive/mobile/folders/
+        Regex("drive\\.google\\.com/drive/[^/]*/folders/").containsMatchIn(url) -> {
+            val id = url.substringAfter("folders/").substringBefore("?").substringBefore("/")
+            "https://drive.google.com/drive/folders/$id"
         }
 
         // Other Google Drive links — add embedded mode
