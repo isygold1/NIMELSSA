@@ -1,11 +1,11 @@
-name: Build Android APK
+name: Build NIMELSSA Vault APK
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:        # Allow manual trigger from GitHub UI
+  workflow_dispatch:
     inputs:
       version:
         description: 'App version label (e.g., 1.0.1)'
@@ -21,16 +21,6 @@ jobs:
       - name: ⬇️ Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🟢 Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-          cache-dependency-path: 'package.json'
-
-      - name: 📦 Install npm dependencies
-        run: npm install
-
       - name: ☕ Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -40,49 +30,32 @@ jobs:
       - name: 🤖 Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: 🌐 Prepare www directory for Capacitor
-        run: |
-          mkdir -p www/icons
-          cp index.html www/
-          cp manifest.json www/
-          cp sw.js www/
-          cp -r icons/* www/icons/
-
-      - name: ⚡ Add Capacitor Android platform
-        run: npx cap add android
-
-      - name: 🔄 Sync web assets to Android project
-        run: npx cap sync android
-
       - name: 🏗️ Build debug APK with Gradle
-        run: |
-          cd android
-          ./gradlew assembleDebug
+        run: ./gradlew assembleDebug
         env:
           CI: true
 
       - name: 🔍 Locate APK file
         run: |
           echo "Searching for APK files..."
-          find android -name "*.apk" -type f 2>/dev/null
+          find . -name "*.apk" -type f 2>/dev/null
           echo "---"
-          ls -la android/app/build/outputs/apk/ 2>/dev/null || echo "No outputs dir"
+          ls -la app/build/outputs/apk/debug/ 2>/dev/null || echo "No debug outputs dir"
 
       - name: 📤 Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
           name: nimelssa-vault-debug-apk
           path: |
-            android/app/build/outputs/apk/debug/*
-            android/app/build/outputs/apk/*/debug/*.apk
-          if-no-files-found: warn
+            app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
           retention-days: 30
 
       - name: 🏷️ Create Release (on version tag push)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: android/app/build/outputs/apk/debug/*.apk
+          files: app/build/outputs/apk/debug/*.apk
           name: NIMELSSA Vault ${{ github.ref_name }}
           body: |
             ## NIMELSSA Vault ${{ github.ref_name }}

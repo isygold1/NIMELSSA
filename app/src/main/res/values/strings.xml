@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NIMELSSA Vault</string>
+    <string name="auth_title">NIMELSSA VAULT</string>
+    <string name="auth_subtitle">Access Central Academic Repository</string>
+    <string name="sign_in">Sign In</string>
+    <string name="sign_up">Sign Up</string>
+    <string name="workspace">Workspace</string>
+    <string name="propose">Propose</string>
+    <string name="rep_desk">Rep Desk</string>
+    <string name="study_notes">Study Notes</string>
+    <string name="past_questions">Past Questions</string>
+    <string name="save_offline">Save Offline</string>
+    <string name="logout">Logout</string>
+</resources>

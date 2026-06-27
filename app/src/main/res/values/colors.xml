@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_app">#0f172a</color>
+    <color name="bg_canvas">#f8fafc</color>
+    <color name="surface">#ffffff</color>
+    <color name="primary">#0f766e</color>
+    <color name="primary_light">#f0fdfa</color>
+    <color name="text_dark">#0f172a</color>
+    <color name="text_muted">#64748b</color>
+    <color name="border">#e2e8f0</color>
+    <color name="accent_blue">#0284c7</color>
+    <color name="error">#dc2626</color>
+    <color name="success">#16a34a</color>
+    <color name="amber">#d97706</color>
+</resources>

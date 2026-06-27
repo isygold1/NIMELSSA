@@ -2,108 +2,104 @@
 
 > **NIMELSSA** – *Nigerian Medical Laboratory Science Students Association* Academic Vault
 
-A private, mobile-first Progressive Web App (PWA) for curating, accessing, and managing Medical Laboratory Science (MLS) academic resources. Built for students by students.
+A native Android application for curating, accessing, and managing Medical Laboratory Science (MLS) academic resources. Built for students by students.
 
 ## Features
 
 - **Authentication Gateway** — Secure sign-in / sign-up with role-based access (Student / Class Rep)
 - **Course Repository** — Browse lecture notes and past questions filtered by level and semester
-- **In-App Document Viewer** — Read notes and PQs with page navigation and text-selection-driven contextual search
+- **In-App Document Viewer** — Read notes and PQs with page navigation
 - **Resource Proposals** — Students can submit Google Drive links or local files for moderation
 - **Rep Approval Queue** — Level Representatives review and publish student submissions
-- **Offline Support** — Service worker caches core assets; per-course offline toggle via IndexedDB (future)
-- **CBT Exam Portal** — Placeholder for upcoming Computer-Based Testing feature
+- **Personal Profile** — View account details and institution information
+- **CBT Exam Portal** — Practice multiple-choice questions with instant scoring
+- **Email Change Request** — Update registered email with OTP verification
 
 ## Tech Stack
 
 | Layer           | Technology                              |
 |-----------------|-----------------------------------------|
-| Frontend        | Vanilla HTML / CSS / JS (PWA)           |
-| App Shell       | Phone-frame simulation (mobile UI)      |
-| Native Wrapper  | Capacitor 6 (Android APK)               |
-| Offline         | Service Worker (Cache API)              |
-| Icons           | SVG + PNG multi-resolution              |
-| CI/CD           | GitHub Actions (APK + Pages)            |
-| Hosting         | GitHub Pages / any static server        |
+| Language        | Kotlin                                  |
+| UI              | Jetpack Compose (Material 3)            |
+| Architecture    | Single-Activity, Composable Navigation  |
+| Navigation      | Navigation Compose (NavHost)            |
+| State Mgmt     | StateFlow + Compose `collectAsState`    |
+| CI/CD           | GitHub Actions (APK build)              |
+| Min SDK         | Android 8.0 (API 26)                    |
+| Target SDK      | Android 14 (API 34)                     |
 
 ## Project Structure
 
 ```
 NIMELSSA/
-├── index.html                # Main application entry point
-├── manifest.json             # PWA manifest
-├── sw.js                     # Service worker (offline caching)
-├── capacitor.config.json     # Capacitor native app config
-├── package.json              # Project metadata & build scripts
+├── app/
+│   ├── build.gradle.kts          # App-level Gradle config
+│   └── src/main/
+│       ├── AndroidManifest.xml
+│       ├── java/com/nimelssa/vault/
+│       │   ├── MainActivity.kt           # Entry point + navigation
+│       │   ├── data/
+│       │   │   ├── Course.kt             # Course data model
+│       │   │   ├── CourseRepository.kt   # In-memory course store
+│       │   │   └── UserSession.kt        # Auth state management
+│       │   └── ui/
+│       │       ├── components/
+│       │       │   ├── AppDrawer.kt      # Navigation drawer
+│       │       │   ├── BottomNavBar.kt   # Bottom navigation
+│       │       │   ├── CircularProgress.kt
+│       │       │   └── CourseCard.kt
+│       │       ├── screens/
+│       │       │   ├── AdminScreen.kt
+│       │       │   ├── AuthScreen.kt
+│       │       │   ├── CbtExamScreen.kt
+│       │       │   ├── DocumentViewerScreen.kt
+│       │       │   ├── EmailChangeScreen.kt
+│       │       │   ├── ProfileScreen.kt
+│       │       │   ├── ProposeScreen.kt
+│       │       │   └── WorkspaceScreen.kt
+│       │       └── theme/
+│       │           ├── Color.kt
+│       │           ├── Theme.kt
+│       │           └── Type.kt
+│       └── res/                           # Resources (icons, themes, strings)
+├── build.gradle.kts              # Root Gradle config
+├── settings.gradle.kts           # Gradle settings
+├── gradle.properties             # Gradle properties
+├── gradlew / gradlew.bat         # Gradle wrapper scripts
 ├── .github/workflows/
-│   ├── build-apk.yml         # CI: build Android APK on push
-│   └── deploy-pages.yml      # CD: deploy PWA to GitHub Pages
+│   └── build-apk.yml             # CI: build Android APK on push/PR
 ├── .gitignore
-├── README.md
-└── icons/
-    ├── icon.svg              # Scalable vector icon
-    ├── icon-72.png           # 72×72 PNG icon
-    ├── icon-96.png           # 96×96 PNG icon
-    ├── icon-128.png          # 128×128 PNG icon
-    ├── icon-144.png          # 144×144 PNG icon
-    ├── icon-152.png          # 152×152 PNG icon
-    ├── icon-192.png          # 192×192 PNG icon
-    ├── icon-384.png          # 384×384 PNG icon
-    └── icon-512.png          # 512×512 PNG icon
+└── README.md
 ```
 
-## Install as an App
-
-You can install NIMELSSA Vault **two ways**:
-
-### Option 1 — PWA (browser install)
-
-1. Serve the app locally or on any static host:
-   ```bash
-   python3 -m http.server 8000
-   # or use npx serve .
-   ```
-2. Open in Chrome / Edge and tap **"Install"** or **"Add to Home Screen"**
-3. Launches standalone with no browser chrome
-
-### Option 2 — Android APK (native app)
-
-1. Go to the **Actions** tab in this repository
-2. Click the latest **"Build Android APK"** workflow run
-3. Scroll down to **Artifacts** and download `nimelssa-vault-debug-apk.zip`
-4. Extract and side-load the `.apk` on your Android device
-5. Install and launch as a native app
-
-> **Tip:** On first run, Android may ask you to allow "Install from unknown sources" — this is normal for debug APKs.
-
-## Build Locally
+## Build & Install
 
 ### Prerequisites
 
-- Node.js 20+
-- Android Studio (for local APK builds)
+- Android Studio (or Gradle + JDK 17)
 - Java 17+
+- Android SDK (API 34)
 
-### Commands
+### Build APK
 
 ```bash
 # 1. Clone
-git clone https://github.com/isygold/NIMELSSA.git
+git clone https://github.com/isygold1/NIMELSSA.git
 cd NIMELSSA
 
-# 2. Install dependencies
-npm install
+# 2. Build debug APK
+./gradlew assembleDebug
 
-# 3. Init and build APK
-npx cap init NIMELSSA vault
-npx cap add android
-npx cap sync android
-cd android && ./gradlew assembleDebug
-
-# APK located at: android/app/build/outputs/apk/debug/app-debug.apk
+# APK located at: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## GitHub Actions Workflows
+### Install on Device
+
+1. Build or download the debug APK from GitHub Actions artifacts
+2. Side-load the `.apk` on your Android device (Android 8+)
+3. On first run, allow "Install from unknown sources" for debug APKs
+
+## GitHub Actions
 
 | Workflow | Trigger | Output |
 |----------|---------|--------|

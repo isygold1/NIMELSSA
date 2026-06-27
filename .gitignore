@@ -7,10 +7,21 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+*.iml
 
 # Node
 node_modules/
 npm-debug.log*
+
+# Android / Gradle
+local.properties
+.gradle/
+build/
+app/build/
+captures/
+*.apk
+*.aab
+*.ap_
 
 # Temp
 *.tmp
