@@ -161,7 +161,7 @@ fun MainApp() {
                             restoreState = true
                         }
                     },
-                    showAdmin = userState.role == UserRole.REP
+                    showAdmin = userState.role == UserRole.ADMIN || userState.role == UserRole.REP
                 )
             }
         ) { innerPadding ->

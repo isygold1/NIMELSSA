@@ -92,6 +92,7 @@ fun ProfileScreen(
                     )
                     Text(
                         text = when (user.role) {
+                            UserRole.ADMIN -> "Administrator • Full Access"
                             UserRole.REP -> "${user.repLevel}L Class Representative"
                             UserRole.STUDENT -> "Student • Active Member"
                         },

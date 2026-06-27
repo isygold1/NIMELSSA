@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 enum class AuthMode { LOGIN, SIGNUP }
-enum class UserRole { STUDENT, REP }
+enum class UserRole { STUDENT, REP, ADMIN }
 
 data class UserState(
     val isLoggedIn: Boolean = false,
@@ -59,7 +59,11 @@ object UserSession {
                     val email = (data["email"] as? String) ?: fallbackEmail
                     val roleStr = (data["role"] as? String) ?: "student"
                     val repLevel = (data["repLevel"] as? String) ?: "200"
-                    val role = if (roleStr == "rep") UserRole.REP else UserRole.STUDENT
+                    val role = when (roleStr) {
+                        "admin" -> UserRole.ADMIN
+                        "rep" -> UserRole.REP
+                        else -> UserRole.STUDENT
+                    }
 
                     _state.value = UserState(
                         isLoggedIn = true,
@@ -109,7 +113,11 @@ object UserSession {
                     val userData = mutableMapOf<String, Any>(
                         "name" to name,
                         "email" to email,
-                        "role" to (if (role == UserRole.REP) "rep" else "student"),
+                        "role" to when (role) {
+                            UserRole.ADMIN -> "admin"
+                            UserRole.REP -> "rep"
+                            UserRole.STUDENT -> "student"
+                        },
                         "createdAt" to FieldValue.serverTimestamp()
                     )
                     if (role == UserRole.REP) {
