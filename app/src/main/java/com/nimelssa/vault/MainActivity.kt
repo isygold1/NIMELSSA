@@ -41,6 +41,8 @@ import com.nimelssa.vault.ui.screens.DocumentViewerScreen
 import com.nimelssa.vault.ui.screens.EmailChangeScreen
 import com.nimelssa.vault.ui.screens.ProfileScreen
 import com.nimelssa.vault.ui.screens.ProposeScreen
+import com.nimelssa.vault.ui.screens.ReportScreen
+import com.nimelssa.vault.ui.screens.ReportsDashboardScreen
 import com.nimelssa.vault.ui.screens.WorkspaceScreen
 import com.nimelssa.vault.ui.theme.NIMELSSATheme
 import kotlinx.coroutines.launch
@@ -67,6 +69,8 @@ object Routes {
     const val PROFILE = "profile"
     const val CBT = "cbt"
     const val EMAIL_CHANGE = "email_change"
+    const val REPORT = "report"
+    const val REPORTS_DASHBOARD = "reports_dashboard"
 
     fun viewerRoute(courseCode: String) = "viewer/$courseCode"
 }
@@ -138,6 +142,14 @@ fun MainApp() {
                     onNavigateToEmailMod = {
                         scope.launch { drawerState.close() }
                         navController.navigate(Routes.EMAIL_CHANGE)
+                    },
+                    onNavigateToReport = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate(Routes.REPORT)
+                    },
+                    onNavigateToReportsDashboard = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate(Routes.REPORTS_DASHBOARD)
                     },
                     onLogout = {
                         scope.launch { drawerState.close() }
@@ -226,6 +238,18 @@ fun MainApp() {
 
                 composable(Routes.EMAIL_CHANGE) {
                     EmailChangeScreen(
+                        onClose = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Routes.REPORT) {
+                    ReportScreen(
+                        onClose = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Routes.REPORTS_DASHBOARD) {
+                    ReportsDashboardScreen(
                         onClose = { navController.popBackStack() }
                     )
                 }

@@ -79,9 +79,13 @@ fun DrawerContent(
     onNavigateToCbt: () -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToEmailMod: () -> Unit,
+    onNavigateToReport: () -> Unit,
+    onNavigateToReportsDashboard: (() -> Unit)? = null,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isStaff = user.role == UserRole.ADMIN || user.role == UserRole.REP
+
     Column(
         modifier = modifier
             .width(280.dp)
@@ -95,6 +99,11 @@ fun DrawerContent(
         DrawerMenuItem(text = "⏱️ CBT Exam Portal", onClick = onNavigateToCbt)
         DrawerMenuItem(text = "👤 Personal Information", onClick = onNavigateToProfile)
         DrawerMenuItem(text = "📧 Change Registered Email", onClick = onNavigateToEmailMod)
+        DrawerMenuItem(text = "🐛 Report Issue / Complaint", onClick = onNavigateToReport)
+
+        if (isStaff && onNavigateToReportsDashboard != null) {
+            DrawerMenuItem(text = "📋 Reports Dashboard", onClick = onNavigateToReportsDashboard)
+        }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 

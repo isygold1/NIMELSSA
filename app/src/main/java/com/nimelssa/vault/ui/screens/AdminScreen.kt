@@ -219,6 +219,14 @@ fun AdminScreen(
 
         // ── Add New Course (admin & reps) ──
         if (canManage) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Use this form to pre-populate a course entry with its name, category, and level. " +
+                       "Students can then submit resources against it via the Propose tab.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = { showAddForm = !showAddForm },
                 modifier = Modifier.fillMaxWidth(),
