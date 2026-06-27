@@ -42,7 +42,7 @@ jobs:
 
       - name: ⚡ Initialize Capacitor Android platform
         run: |
-          npx cap init NIMELSSA vault --webDir . --npmClient npm
+          npx cap init NIMELSSA vault --web-dir . --npm-client npm
           npx cap add android
 
       - name: 🔄 Sync web assets to Android project

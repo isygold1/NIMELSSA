@@ -95,7 +95,7 @@ cd NIMELSSA
 npm install
 
 # 3. Init and build APK
-npx cap init NIMELSSA vault --webDir . --npmClient npm
+npx cap init NIMELSSA vault --web-dir . --npm-client npm
 npx cap add android
 npx cap sync android
 cd android && ./gradlew assembleDebug
