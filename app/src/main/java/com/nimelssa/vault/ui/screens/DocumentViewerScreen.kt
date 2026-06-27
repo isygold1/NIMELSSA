@@ -1,8 +1,9 @@
 package com.nimelssa.vault.ui.screens
 
-import androidx.compose.foundation.background
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,21 +16,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
@@ -43,15 +45,19 @@ fun DocumentViewerScreen(
 ) {
     if (course == null) return
 
-    var currentPage by remember { mutableIntStateOf(1) }
-    val totalPages = 12
+    val context = LocalContext.current
+
+    fun openUrl(url: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        context.startActivity(intent)
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         // Top bar
         TopAppBar(
             title = {
                 Text(
-                    text = "${course.code} - ${course.name}",
+                    text = "${course.code}",
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1
                 )
@@ -77,122 +83,179 @@ fun DocumentViewerScreen(
             )
         )
 
-        // Content area
-        Box(
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .background(Color(0xFFE2E8F0))
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
-                    .padding(16.dp)
-            ) {
-                // Meta strip
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                        .padding(8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = course.code,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "Page $currentPage of $totalPages",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            // Course info
+            Text(
+                text = course.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
 
-                Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "${course.displayLevel} • ${course.displaySemester} • ${course.category}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-                // Sample document content (same as MLS.html)
+            // Submitted by
+            if (course.submittedBy.isNotBlank()) {
                 Text(
-                    text = "CHAPTER 1: INTRODUCTION TO MEDICAL LABORATORY SCIENCE",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
+                    text = "Submitted by: ${course.submittedBy}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
 
-                Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-                Text(
-                    text = "1.1 Definition and Scope",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+            // Materials section
+            Text(
+                text = "📚 Available Resources",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Lecture Notes
+            if (course.lectureNotesUrl.isNotBlank()) {
+                ResourceCard(
+                    title = "📖 Study Notes / Lecture Slides",
+                    url = course.lectureNotesUrl,
+                    notes = if (resourceTypeMatches(course.notes, "Lecture")) course.notes else "",
+                    onOpen = { openUrl(course.lectureNotesUrl) }
                 )
+            }
 
+            // Past Questions
+            if (course.pastQuestionsUrl.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Medical Laboratory Science (MLS) is the health profession concerned with the " +
-                            "performance of laboratory analyses that aid in the diagnosis, treatment, and " +
-                            "monitoring of patients. It encompasses disciplines including Hematology, " +
-                            "Clinical Chemistry, Microbiology, Immunology, Blood Banking, and Histopathology.",
-                    style = MaterialTheme.typography.bodyLarge
+                ResourceCard(
+                    title = "📝 Past Questions & Test Papers",
+                    url = course.pastQuestionsUrl,
+                    notes = if (resourceTypeMatches(course.notes, "Past")) course.notes else "",
+                    onOpen = { openUrl(course.pastQuestionsUrl) }
                 )
+            }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Key point box
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(6.dp))
-                        .padding(12.dp)
+            // No resources yet
+            if (course.lectureNotesUrl.isBlank() && course.pastQuestionsUrl.isBlank()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF9C3))
                 ) {
-                    Text(
-                        text = "KEY POINT: The MLSCN governs practice standards and professional " +
-                                "registration for all MLS practitioners in Nigeria.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "📭",
+                            fontSize = MaterialTheme.typography.headlineLarge.fontSize
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "No materials uploaded yet",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Use the Propose tab to submit lecture notes or past questions for this course.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
+            // Contributor notes
+            if (course.notes.isNotBlank()) {
+                Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "— End of page $currentPage — Scroll for more —",
+                    text = "📌 Contributor Notes",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = course.notes,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun ResourceCard(
+    title: String,
+    url: String,
+    notes: String,
+    onOpen: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = url,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 2
+            )
+            if (notes.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = notes,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
-
-        // Navigation buttons
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+            Spacer(modifier = Modifier.height(10.dp))
             Button(
-                onClick = { if (currentPage > 1) currentPage-- },
-                modifier = Modifier.weight(1f),
-                enabled = currentPage > 1,
+                onClick = onOpen,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                ),
-                shape = RoundedCornerShape(8.dp)
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
             ) {
-                Text("← Previous")
-            }
-            Button(
-                onClick = { if (currentPage < totalPages) currentPage++ },
-                modifier = Modifier.weight(1f),
-                enabled = currentPage < totalPages,
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text("Next Page →")
+                Text("Open Resource ↗", fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+/** Simple check if the notes relate to this resource type */
+private fun resourceTypeMatches(notes: String, type: String): Boolean {
+    if (notes.isBlank()) return false
+    val lower = notes.lowercase()
+    return when (type) {
+        "Lecture" -> lower.contains("lecture") || lower.contains("note") || lower.contains("slide")
+        "Past" -> lower.contains("past") || lower.contains("question") || lower.contains("exam")
+        else -> true
     }
 }

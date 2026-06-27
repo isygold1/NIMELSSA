@@ -42,6 +42,7 @@ import com.google.firebase.ktx.Firebase
 import com.google.firebase.storage.ktx.storage
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
+import com.nimelssa.vault.data.UserSession
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -52,10 +53,12 @@ fun ProposeScreen(
     onProposed: (Course) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val user by UserSession.state.collectAsState()
     var courseCode by remember { mutableStateOf("") }
     var selectedSemester by remember { mutableStateOf(1) }
     var resourceType by remember { mutableStateOf("Lecture Notes") }
     var notes by remember { mutableStateOf("") }
+    var driveLink by remember { mutableStateOf("") }
     var uploadMode by remember { mutableStateOf("link") }
 
     // File upload state
@@ -87,6 +90,55 @@ fun ProposeScreen(
         }
     }
 
+    /** Determine category from course code prefix */
+    fun inferCategory(code: String): String = when {
+        code.startsWith("BIO") -> "BIOLOGY"
+        code.startsWith("CHM") -> "CHEMISTRY"
+        code.startsWith("PHY") -> "PHYSICS"
+        code.startsWith("BCH") -> "BIOCHEMISTRY"
+        code.startsWith("MLS") -> "MEDICAL LABORATORY SCIENCE"
+        code.startsWith("GST") -> "GENERAL STUDIES"
+        code.startsWith("STA") -> "MATHEMATICS"
+        code.startsWith("CSC") -> "COMPUTER SCIENCE"
+        else -> "MEDICAL LABORATORY SCIENCE"
+    }
+
+    /** Determine level from course code (first digit) */
+    fun inferLevel(code: String): String {
+        val firstDigit = code.firstOrNull { it.isDigit() }
+        return if (firstDigit != null) "${firstDigit}00" else "200"
+    }
+
+    /** Build course name from code and resource type */
+    fun buildCourseName(code: String): String = when {
+        resourceType == "Lecture Notes" -> "$code - Lecture Notes"
+        resourceType == "Past Questions" -> "$code - Past Questions"
+        else -> "$code - Reference Material"
+    }
+
+    /** Submit the proposal */
+    fun submitProposal(resourceUrl: String) {
+        val code = courseCode.uppercase().trim()
+        if (code.isBlank()) return
+
+        val newCourse = Course(
+            code = code,
+            name = buildCourseName(code),
+            category = inferCategory(code),
+            level = inferLevel(code),
+            semester = selectedSemester,
+            progress = 0,
+            isPending = true,
+            lectureNotesUrl = if (resourceType == "Lecture Notes") resourceUrl else "",
+            pastQuestionsUrl = if (resourceType == "Past Questions") resourceUrl else "",
+            submittedBy = user.email,
+            notes = notes
+        )
+
+        CourseRepository.addCourse(newCourse)
+        onProposed(newCourse)
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -99,13 +151,17 @@ fun ProposeScreen(
             color = MaterialTheme.colorScheme.secondary,
             fontWeight = FontWeight.Bold
         )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Upload a resource and match it to a course. It goes to Rep/Admin for approval.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         // Upload mode selector
-        val uploadShape = SegmentedButtonDefaults.itemShape(
-            index = 0, count = 2
-        )
+        val uploadShape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             SegmentedButton(
                 selected = uploadMode == "link",
@@ -135,7 +191,7 @@ fun ProposeScreen(
                 value = courseCode,
                 onValueChange = { courseCode = it.uppercase() },
                 label = { Text("Target Course Code") },
-                placeholder = { Text("e.g., BIO 202") },
+                placeholder = { Text("e.g., MLS 301") },
                 modifier = Modifier.weight(1f),
                 singleLine = true,
                 shape = RoundedCornerShape(8.dp)
@@ -210,8 +266,8 @@ fun ProposeScreen(
         // URL / File upload
         if (uploadMode == "link") {
             OutlinedTextField(
-                value = "",
-                onValueChange = {},
+                value = driveLink,
+                onValueChange = { driveLink = it },
                 label = { Text("Google Drive Folder URL") },
                 placeholder = { Text("https://drive.google.com/drive/folders/...") },
                 modifier = Modifier.fillMaxWidth(),
@@ -264,7 +320,7 @@ fun ProposeScreen(
             value = notes,
             onValueChange = { notes = it },
             label = { Text("Useful Context / Contributor Notes") },
-            placeholder = { Text("e.g., Contains missing 2024 questions...") },
+            placeholder = { Text("e.g., Contains 2023/2024 session past questions...") },
             modifier = Modifier.fillMaxWidth(),
             minLines = 2,
             shape = RoundedCornerShape(8.dp)
@@ -272,63 +328,64 @@ fun ProposeScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Submit
+        // Submit button
         Button(
             onClick = {
-                val firstDigit = courseCode.firstOrNull { it.isDigit() }
-                val level = if (firstDigit != null) "${firstDigit}00" else "200"
-                val category = when {
-                    courseCode.contains("BIO") -> "BIOLOGY"
-                    courseCode.contains("CHM") -> "CHEMISTRY"
-                    courseCode.contains("PHY") -> "PHYSICS"
-                    courseCode.contains("BCH") -> "BIOCHEMISTRY"
-                    courseCode.contains("MLS") -> "MEDICAL LABORATORY SCIENCE"
-                    courseCode.contains("GST") -> "GENERAL STUDIES"
-                    courseCode.contains("STA") -> "MATHEMATICS"
-                    else -> "MEDICAL LABORATORY SCIENCE"
+                val code = courseCode.uppercase().trim()
+                if (code.isBlank()) {
+                    uploadMessage = "❌ Please enter a course code."
+                    return@Button
                 }
 
-                val newCourse = Course(
-                    code = courseCode.ifEmpty { "UNCODED" },
-                    name = "$courseCode - Reference Material",
-                    category = category,
-                    level = level,
-                    semester = selectedSemester,
-                    progress = 0,
-                    isPending = true
-                )
-                CourseRepository.addCourse(newCourse)
-
-                // Upload file to Firebase Storage if selected
-                if (selectedFileUri != null && uploadMode == "file") {
+                if (uploadMode == "link") {
+                    // Use Drive link directly
+                    if (driveLink.isBlank()) {
+                        uploadMessage = "❌ Please enter a Google Drive URL."
+                        return@Button
+                    }
+                    submitProposal(driveLink.trim())
+                } else if (selectedFileUri != null) {
+                    // Upload file first, then submit with download URL
                     isUploading = true
                     uploadMessage = null
                     val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                    val fileName = "${courseCode}_${timestamp}_${selectedFileName}"
-                    val ref = storage.reference.child("proposals/$fileName")
+                    val fileName = "${code}_${timestamp}_${selectedFileName}"
+                    val ref = storage.reference.child("materials/$fileName")
 
                     ref.putFile(selectedFileUri!!)
                         .addOnSuccessListener {
-                            isUploading = false
-                            uploadMessage = "✅ File uploaded successfully!"
+                            ref.downloadUrl.addOnSuccessListener { downloadUri ->
+                                isUploading = false
+                                uploadMessage = "✅ Uploaded! Submitting proposal..."
+                                submitProposal(downloadUri.toString())
+                            }
                         }
                         .addOnFailureListener { e ->
                             isUploading = false
                             uploadMessage = "❌ Upload failed: ${e.message}"
                         }
+                } else {
+                    uploadMessage = "❌ Please provide a Drive link or upload a file."
                 }
-
-                onProposed(newCourse)
             },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp),
+            enabled = !isUploading,
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary
             )
         ) {
-            Text("Submit to Verification Staging", fontWeight = FontWeight.Bold)
+            if (isUploading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Text("Submit to Verification Staging", fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
