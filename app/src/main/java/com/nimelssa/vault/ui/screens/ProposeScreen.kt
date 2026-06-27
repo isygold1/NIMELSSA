@@ -219,7 +219,8 @@ fun ProposeScreen(
                     category = category,
                     level = level,
                     semester = selectedSemester,
-                    progress = 0
+                    progress = 0,
+                    isPending = true
                 )
                 CourseRepository.addCourse(newCourse)
                 onProposed(newCourse)

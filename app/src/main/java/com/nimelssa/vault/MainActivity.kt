@@ -191,12 +191,19 @@ fun MainApp() {
                 }
 
                 composable(Routes.ADMIN) {
-                    val pendingCourse = CourseRepository.courses.value.lastOrNull { !it.isOffline }
+                    val pendingList = CourseRepository.getPendingCourses()
+                    val pendingCourse = pendingList.firstOrNull()
                     AdminScreen(
                         repLevel = userState.repLevel,
                         pendingCourse = pendingCourse,
-                        onApprove = { /* Approve logic */ },
-                        onReject = { /* Reject logic */ }
+                        onApprove = { course ->
+                            CourseRepository.approveCourse(course.code)
+                        },
+                        onReject = {
+                            if (pendingCourse != null) {
+                                CourseRepository.rejectCourse(pendingCourse.code)
+                            }
+                        }
                     )
                 }
 
