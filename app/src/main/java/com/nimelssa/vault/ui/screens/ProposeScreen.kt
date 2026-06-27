@@ -1,9 +1,5 @@
 package com.nimelssa.vault.ui.screens
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,16 +7,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -28,35 +19,19 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.google.firebase.ktx.Firebase
-import com.google.firebase.storage.ktx.storage
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
 import com.nimelssa.vault.data.UserSession
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.tasks.await
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,48 +40,12 @@ fun ProposeScreen(
     modifier: Modifier = Modifier
 ) {
     val user by UserSession.state.collectAsState()
-    val scope = rememberCoroutineScope()
     var courseCode by remember { mutableStateOf("") }
     var selectedSemester by remember { mutableStateOf(1) }
     var resourceType by remember { mutableStateOf("Lecture Notes") }
     var notes by remember { mutableStateOf("") }
     var driveLink by remember { mutableStateOf("") }
-    var uploadMode by remember { mutableStateOf("link") }
-
-    // File upload state
-    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
-    var selectedFileName by remember { mutableStateOf("") }
-    var selectedFileSize by remember { mutableStateOf(0L) }
-    var isUploading by remember { mutableStateOf(false) }
-    var uploadProgress by remember { mutableIntStateOf(0) }
-    var uploadMessage by remember { mutableStateOf<String?>(null) }
-
-    val context = LocalContext.current
-    val storage = remember { Firebase.storage }
-
-    // File picker launcher
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            selectedFileUri = uri
-            // Extract file name from URI
-            val cursor = context.contentResolver.query(uri, null, null, null, null)
-            if (cursor != null && cursor.moveToFirst()) {
-                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                if (nameIndex >= 0) {
-                    selectedFileName = cursor.getString(nameIndex) ?: "document"
-                }
-                if (sizeIndex >= 0) {
-                    selectedFileSize = cursor.getLong(sizeIndex)
-                }
-                cursor.close()
-            } else {
-                selectedFileName = uri.lastPathSegment ?: "document"
-            }
-        }
-    }
+    var message by remember { mutableStateOf<String?>(null) }
 
     /** Determine category from course code prefix */
     fun inferCategory(code: String): String = when {
@@ -171,35 +110,10 @@ fun ProposeScreen(
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Upload a resource and match it to a course. It goes to Rep/Admin for approval.",
+            text = "Submit a resource link and match it to a course. It goes to Rep/Admin for approval.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Upload mode selector
-        val uploadShape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            SegmentedButton(
-                selected = uploadMode == "link",
-                onClick = { uploadMode = "link" },
-                shape = uploadShape,
-                colors = SegmentedButtonDefaults.colors(
-                    activeContainerColor = MaterialTheme.colorScheme.primary,
-                    activeContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            ) { Text("Drive Folder Link") }
-            SegmentedButton(
-                selected = uploadMode == "file",
-                onClick = { uploadMode = "file" },
-                shape = uploadShape,
-                colors = SegmentedButtonDefaults.colors(
-                    activeContainerColor = MaterialTheme.colorScheme.primary,
-                    activeContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            ) { Text("Upload Document") }
-        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -281,149 +195,16 @@ fun ProposeScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // URL / File upload
-        if (uploadMode == "link") {
-            OutlinedTextField(
-                value = driveLink,
-                onValueChange = { driveLink = it },
-                label = { Text("Google Drive Folder URL") },
-                placeholder = { Text("https://drive.google.com/drive/folders/...") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(8.dp)
-            )
-        } else {
-            // ── File picker area ──
-            if (selectedFileUri == null) {
-                // No file selected — show picker button
-                Button(
-                    onClick = { filePickerLauncher.launch("*/*") },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF1E293B)
-                    ),
-                    border = BorderStroke(
-                        1.dp, Color(0xFF475569)
-                    )
-                ) {
-                    Text(
-                        text = "📄  Choose Document",
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFCBD5E1)
-                    )
-                }
-            } else {
-                // File selected — show file info card + change/remove buttons
-                val fileTypeIcon = when {
-                    selectedFileName.endsWith(".pdf", ignoreCase = true) -> "📕"
-                    selectedFileName.endsWith(".doc", ignoreCase = true) ||
-                    selectedFileName.endsWith(".docx", ignoreCase = true) -> "📘"
-                    selectedFileName.endsWith(".ppt", ignoreCase = true) ||
-                    selectedFileName.endsWith(".pptx", ignoreCase = true) -> "📙"
-                    selectedFileName.endsWith(".xls", ignoreCase = true) ||
-                    selectedFileName.endsWith(".xlsx", ignoreCase = true) -> "📗"
-                    else -> "📄"
-                }
-                val fileSizeStr = when {
-                    selectedFileSize < 1024 -> "${selectedFileSize} B"
-                    selectedFileSize < 1024 * 1024 -> "${selectedFileSize / 1024} KB"
-                    else -> "%.1f MB".format(selectedFileSize / (1024.0 * 1024.0))
-                }
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF1E293B)
-                    ),
-                    border = BorderStroke(
-                        1.dp, Color(0xFF334155)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // File icon
-                        Text(
-                            text = fileTypeIcon,
-                            style = MaterialTheme.typography.headlineMedium
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = selectedFileName,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = fileSizeStr,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF94A3B8)
-                            )
-                        }
-                        // Remove button
-                        TextButton(
-                            onClick = {
-                                selectedFileUri = null
-                                selectedFileName = ""
-                                selectedFileSize = 0L
-                            },
-                            enabled = !isUploading
-                        ) {
-                            Text(
-                                "✕",
-                                color = Color(0xFFEF4444),
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-
-                // Change file
-                TextButton(
-                    onClick = { filePickerLauncher.launch("*/*") },
-                    enabled = !isUploading
-                ) {
-                    Text(
-                        "Change file",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF60A5FA)
-                    )
-                }
-            }
-
-            // ── Upload progress bar ──
-            if (isUploading) {
-                Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { uploadProgress / 100f },
-                    modifier = Modifier.fillMaxWidth().height(6.dp),
-                    color = Color(0xFF22C55E),
-                    trackColor = Color(0xFF334155),
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Uploading... ${uploadProgress}%",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF94A3B8)
-                )
-            }
-
-            // ── Upload message ──
-            if (uploadMessage != null && !isUploading) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = uploadMessage!!,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (uploadMessage!!.startsWith("✅")) Color(0xFF4ADE80)
-                            else Color(0xFFEF4444)
-                )
-            }
-        }
+        // Resource URL — the only input mode now
+        OutlinedTextField(
+            value = driveLink,
+            onValueChange = { driveLink = it },
+            label = { Text("Google Drive / Direct Resource URL") },
+            placeholder = { Text("https://drive.google.com/... or https://...pdf") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(8.dp)
+        )
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -440,75 +221,46 @@ fun ProposeScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        // Message feedback
+        if (message != null) {
+            Text(
+                text = message!!,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (message!!.startsWith("✅")) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.error
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
         // Submit button
         Button(
             onClick = {
                 val code = courseCode.uppercase().trim()
                 if (code.isBlank()) {
-                    uploadMessage = "❌ Please enter a course code."
+                    message = "❌ Please enter a course code."
                     return@Button
                 }
-
-                if (uploadMode == "link") {
-                    // Use Drive link directly
-                    if (driveLink.isBlank()) {
-                        uploadMessage = "❌ Please enter a Google Drive URL."
-                        return@Button
-                    }
-                    submitProposal(driveLink.trim())
-                } else if (selectedFileUri != null) {
-                    // Upload file in a coroutine with proper error handling
-                    isUploading = true
-                    uploadMessage = null
-                    scope.launch {
-                        try {
-                            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
-                                .format(Date())
-                            val safeFileName = selectedFileName
-                                .replace(" ", "_")
-                                .replace(Regex("[^a-zA-Z0-9._-]"), "")
-                            val fileName = "${code}_${timestamp}_$safeFileName"
-                            val ref = storage.reference.child("materials/$fileName")
-
-                            // Upload with .await() — runs on IO
-                            val uploadResult = withContext(Dispatchers.IO) {
-                                ref.putFile(selectedFileUri!!).await()
-                            }
-                            // Get download URL
-                            val downloadUri = withContext(Dispatchers.IO) {
-                                uploadResult.storage.downloadUrl.await()
-                            }
-
-                            isUploading = false
-                            uploadMessage = "✅ Uploaded! Submitting proposal..."
-                            submitProposal(downloadUri.toString())
-                        } catch (e: Exception) {
-                            isUploading = false
-                            uploadMessage = "❌ Upload failed: ${e.message}"
-                        }
-                    }
-                } else {
-                    uploadMessage = "❌ Please provide a Drive link or upload a file."
+                if (driveLink.isBlank()) {
+                    message = "❌ Please enter a resource URL."
+                    return@Button
                 }
+                message = null
+                submitProposal(driveLink.trim())
+                message = "✅ Proposal submitted for review!"
+                // Clear form
+                courseCode = ""
+                driveLink = ""
+                notes = ""
             },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp),
-            enabled = !isUploading,
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary
             )
         ) {
-            if (isUploading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = Color.White,
-                    strokeWidth = 2.dp
-                )
-            } else {
-                Text("Submit to Verification Staging", fontWeight = FontWeight.Bold)
-            }
+            Text("Submit to Verification Staging", fontWeight = FontWeight.Bold)
         }
     }
 }
