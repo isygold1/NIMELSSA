@@ -40,10 +40,8 @@ jobs:
       - name: 🤖 Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: ⚡ Initialize Capacitor Android platform
-        run: |
-          npx cap init NIMELSSA vault
-          npx cap add android
+      - name: ⚡ Add Capacitor Android platform
+        run: npx cap add android
 
       - name: 🔄 Sync web assets to Android project
         run: npx cap sync android
