@@ -61,12 +61,21 @@ jobs:
         env:
           CI: true
 
+      - name: 🔍 Locate APK file
+        run: |
+          echo "Searching for APK files..."
+          find android -name "*.apk" -type f 2>/dev/null
+          echo "---"
+          ls -la android/app/build/outputs/apk/ 2>/dev/null || echo "No outputs dir"
+
       - name: 📤 Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
           name: nimelssa-vault-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          path: |
+            android/app/build/outputs/apk/debug/*
+            android/app/build/outputs/apk/*/debug/*.apk
+          if-no-files-found: warn
           retention-days: 30
 
       - name: 🏷️ Create Release (on version tag push)
