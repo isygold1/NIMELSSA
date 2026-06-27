@@ -53,7 +53,7 @@ fun WorkspaceScreen(
     var levelExpanded by remember { mutableStateOf(false) }
     val levels = listOf("100", "200", "300", "400")
 
-    val courses = CourseRepository.getFiltered(selectedLevel, selectedSemester)
+    val courses = CourseRepository.getFilteredMerged(selectedLevel, selectedSemester)
     val categories = CourseRepository.getCategories(selectedLevel, selectedSemester)
 
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp)) {

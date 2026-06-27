@@ -105,6 +105,35 @@ object CourseRepository {
         }
     }
 
+    /**
+     * Returns courses for the given level/semester, with duplicate course codes
+     * merged into a single entry. Multiple resources (lecture notes, past questions)
+     * submitted separately for the same course code are combined into one card.
+     */
+    fun getFilteredMerged(level: String, semester: Int): List<Course> {
+        val filtered = _courses.value.filter {
+            it.level == level && it.semester == semester && !it.isPending
+        }
+        // Group by course code and merge
+        return filtered.groupBy { it.code }.map { (code, entries) ->
+            entries.reduce { merged, next ->
+                merged.copy(
+                    lectureNotesUrl = merged.lectureNotesUrl.ifBlank { next.lectureNotesUrl },
+                    pastQuestionsUrl = merged.pastQuestionsUrl.ifBlank { next.pastQuestionsUrl },
+                    submittedBy = listOfNotNull(
+                        merged.submittedBy.takeIf { it.isNotBlank() },
+                        next.submittedBy.takeIf { it.isNotBlank() }
+                    ).joinToString(", "),
+                    notes = listOfNotNull(
+                        merged.notes.takeIf { it.isNotBlank() },
+                        next.notes.takeIf { it.isNotBlank() }
+                    ).joinToString("; "),
+                    isOffline = merged.isOffline || next.isOffline
+                )
+            }
+        }
+    }
+
     fun addCourse(course: Course) {
         _courses.value = _courses.value + course
     }

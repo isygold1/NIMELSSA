@@ -75,24 +75,40 @@ fun CourseCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onStudyNotes,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp)
+            val hasNotes = course.lectureNotesUrl.isNotBlank()
+            val hasPqs = course.pastQuestionsUrl.isNotBlank()
+
+            if (hasNotes || hasPqs) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("📖 Study Notes", style = MaterialTheme.typography.labelLarge)
+                    if (hasNotes) {
+                        OutlinedButton(
+                            onClick = onStudyNotes,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("📖 Study Notes", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                    if (hasPqs) {
+                        OutlinedButton(
+                            onClick = onPastQuestions,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("📝 Past Questions", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
                 }
-                OutlinedButton(
-                    onClick = onPastQuestions,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("📝 Past Questions", style = MaterialTheme.typography.labelLarge)
-                }
+            } else {
+                Text(
+                    text = "⏳ No resources yet — check back later",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
             }
         }
     }
