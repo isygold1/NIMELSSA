@@ -3,6 +3,7 @@ package com.nimelssa.vault.ui.screens
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,7 +17,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -31,8 +35,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -47,6 +53,10 @@ import com.nimelssa.vault.data.UserSession
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.tasks.await
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,6 +65,7 @@ fun ProposeScreen(
     modifier: Modifier = Modifier
 ) {
     val user by UserSession.state.collectAsState()
+    val scope = rememberCoroutineScope()
     var courseCode by remember { mutableStateOf("") }
     var selectedSemester by remember { mutableStateOf(1) }
     var resourceType by remember { mutableStateOf("Lecture Notes") }
@@ -65,7 +76,9 @@ fun ProposeScreen(
     // File upload state
     var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
     var selectedFileName by remember { mutableStateOf("") }
+    var selectedFileSize by remember { mutableStateOf(0L) }
     var isUploading by remember { mutableStateOf(false) }
+    var uploadProgress by remember { mutableIntStateOf(0) }
     var uploadMessage by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
@@ -81,8 +94,12 @@ fun ProposeScreen(
             val cursor = context.contentResolver.query(uri, null, null, null, null)
             if (cursor != null && cursor.moveToFirst()) {
                 val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
                 if (nameIndex >= 0) {
-                    selectedFileName = cursor.getString(nameIndex)
+                    selectedFileName = cursor.getString(nameIndex) ?: "document"
+                }
+                if (sizeIndex >= 0) {
+                    selectedFileSize = cursor.getLong(sizeIndex)
                 }
                 cursor.close()
             } else {
@@ -276,34 +293,128 @@ fun ProposeScreen(
                 shape = RoundedCornerShape(8.dp)
             )
         } else {
-            // Upload button
-            Button(
-                onClick = { filePickerLauncher.launch("*/*") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                enabled = !isUploading,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (selectedFileUri != null) Color(0xFF16A34A)
-                                     else MaterialTheme.colorScheme.primary
-                )
-            ) {
-                if (isUploading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
+            // ── File picker area ──
+            if (selectedFileUri == null) {
+                // No file selected — show picker button
+                Button(
+                    onClick = { filePickerLauncher.launch("*/*") },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1E293B)
+                    ),
+                    border = BorderStroke(
+                        1.dp, Color(0xFF475569)
                     )
-                } else {
+                ) {
                     Text(
-                        if (selectedFileUri != null) "📄 $selectedFileName (tap to change)"
-                        else "📄 Tap to Upload Document",
-                        fontWeight = FontWeight.Bold
+                        text = "📄  Choose Document",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFCBD5E1)
+                    )
+                }
+            } else {
+                // File selected — show file info card + change/remove buttons
+                val fileTypeIcon = when {
+                    selectedFileName.endsWith(".pdf", ignoreCase = true) -> "📕"
+                    selectedFileName.endsWith(".doc", ignoreCase = true) ||
+                    selectedFileName.endsWith(".docx", ignoreCase = true) -> "📘"
+                    selectedFileName.endsWith(".ppt", ignoreCase = true) ||
+                    selectedFileName.endsWith(".pptx", ignoreCase = true) -> "📙"
+                    selectedFileName.endsWith(".xls", ignoreCase = true) ||
+                    selectedFileName.endsWith(".xlsx", ignoreCase = true) -> "📗"
+                    else -> "📄"
+                }
+                val fileSizeStr = when {
+                    selectedFileSize < 1024 -> "${selectedFileSize} B"
+                    selectedFileSize < 1024 * 1024 -> "${selectedFileSize / 1024} KB"
+                    else -> "%.1f MB".format(selectedFileSize / (1024.0 * 1024.0))
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFF1E293B)
+                    ),
+                    border = BorderStroke(
+                        1.dp, Color(0xFF334155)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // File icon
+                        Text(
+                            text = fileTypeIcon,
+                            style = MaterialTheme.typography.headlineMedium
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = selectedFileName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = fileSizeStr,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        // Remove button
+                        TextButton(
+                            onClick = {
+                                selectedFileUri = null
+                                selectedFileName = ""
+                                selectedFileSize = 0L
+                            },
+                            enabled = !isUploading
+                        ) {
+                            Text(
+                                "✕",
+                                color = Color(0xFFEF4444),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // Change file
+                TextButton(
+                    onClick = { filePickerLauncher.launch("*/*") },
+                    enabled = !isUploading
+                ) {
+                    Text(
+                        "Change file",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF60A5FA)
                     )
                 }
             }
 
-            // Upload message
-            if (uploadMessage != null) {
+            // ── Upload progress bar ──
+            if (isUploading) {
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { uploadProgress / 100f },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = Color(0xFF22C55E),
+                    trackColor = Color(0xFF334155),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Uploading... ${uploadProgress}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF94A3B8)
+                )
+            }
+
+            // ── Upload message ──
+            if (uploadMessage != null && !isUploading) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = uploadMessage!!,
@@ -346,27 +457,36 @@ fun ProposeScreen(
                     }
                     submitProposal(driveLink.trim())
                 } else if (selectedFileUri != null) {
-                    // Upload file first, then submit with download URL
+                    // Upload file in a coroutine with proper error handling
                     isUploading = true
                     uploadMessage = null
-                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                    val fileName = "${code}_${timestamp}_${selectedFileName}"
-                    val ref = storage.reference.child("materials/$fileName")
+                    scope.launch {
+                        try {
+                            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+                                .format(Date())
+                            val safeFileName = selectedFileName
+                                .replace(" ", "_")
+                                .replace(Regex("[^a-zA-Z0-9._-]"), "")
+                            val fileName = "${code}_${timestamp}_$safeFileName"
+                            val ref = storage.reference.child("materials/$fileName")
 
-                    ref.putFile(selectedFileUri!!)
-                        .continueWithTask { task ->
-                            if (!task.isSuccessful) throw task.exception!!
-                            ref.downloadUrl
-                        }
-                        .addOnSuccessListener { downloadUri ->
+                            // Upload with .await() — runs on IO
+                            val uploadResult = withContext(Dispatchers.IO) {
+                                ref.putFile(selectedFileUri!!).await()
+                            }
+                            // Get download URL
+                            val downloadUri = withContext(Dispatchers.IO) {
+                                uploadResult.storage.downloadUrl.await()
+                            }
+
                             isUploading = false
                             uploadMessage = "✅ Uploaded! Submitting proposal..."
                             submitProposal(downloadUri.toString())
-                        }
-                        .addOnFailureListener { e ->
+                        } catch (e: Exception) {
                             isUploading = false
                             uploadMessage = "❌ Upload failed: ${e.message}"
                         }
+                    }
                 } else {
                     uploadMessage = "❌ Please provide a Drive link or upload a file."
                 }
