@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
+import com.nimelssa.vault.data.UserRole
 import com.nimelssa.vault.data.UserSession
 import com.nimelssa.vault.ui.components.CourseCard
 
@@ -46,7 +47,8 @@ fun WorkspaceScreen(
     modifier: Modifier = Modifier
 ) {
     val userState by UserSession.state.collectAsState()
-    var selectedLevel by remember { mutableStateOf(userState.effectiveLevel) }
+    val initialLevel = if (userState.role == UserRole.REP) userState.repLevel else userState.level
+    var selectedLevel by remember { mutableStateOf(initialLevel) }
     var selectedSemester by remember { mutableIntStateOf(1) }
     var levelExpanded by remember { mutableStateOf(false) }
     val levels = listOf("100", "200", "300", "400")

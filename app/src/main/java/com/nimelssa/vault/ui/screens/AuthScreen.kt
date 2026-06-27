@@ -65,6 +65,7 @@ fun AuthScreen(
 
     var showForgotPassword by remember { mutableStateOf(false) }
     var resetSent by remember { mutableStateOf(false) }
+    var selectedLevel by remember { mutableStateOf("100") }
 
     // Auto-dismiss error after 5 seconds
     if (errorMessage != null) {
@@ -341,7 +342,6 @@ fun AuthScreen(
 
                 // Academic Level picker (signup only)
                 var levelExpanded by remember { mutableStateOf(false) }
-                var selectedLevel by remember { mutableStateOf("100") }
                 ExposedDropdownMenuBox(
                     expanded = levelExpanded,
                     onExpandedChange = { levelExpanded = it }

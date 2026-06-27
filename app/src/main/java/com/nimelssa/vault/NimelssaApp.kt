@@ -2,6 +2,7 @@ package com.nimelssa.vault
 
 import android.app.Application
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.nimelssa.vault.data.FirestoreCourseSync
 import com.nimelssa.vault.data.OfflineManager
 import kotlinx.coroutines.CoroutineScope
@@ -21,8 +22,10 @@ class NimelssaApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // 1. Enable Firestore disk persistence
-        FirebaseFirestore.getInstance().setPersistenceEnabled(true)
+        // 1. Enable Firestore disk persistence (via settings builder)
+        FirebaseFirestore.getInstance().firestoreSettings = FirebaseFirestoreSettings.Builder()
+            .setPersistenceEnabled(true)
+            .build()
 
         // 2. Initialise the offline file manager
         OfflineManager.init(this)
