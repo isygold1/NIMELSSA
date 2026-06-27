@@ -159,7 +159,8 @@ fun WorkspaceScreen(
                 items(categoryCourses) { course ->
                     CourseCard(
                         course = course,
-                        onViewResources = { onOpenViewer(course) }
+                        onStudyNotes = { onOpenViewer(course) },
+                        onPastQuestions = { onOpenViewer(course) }
                     )
                 }
             }

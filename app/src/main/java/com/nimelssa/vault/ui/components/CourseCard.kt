@@ -25,7 +25,8 @@ import com.nimelssa.vault.data.Course
 @Composable
 fun CourseCard(
     course: Course,
-    onViewResources: () -> Unit,
+    onStudyNotes: () -> Unit,
+    onPastQuestions: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -74,15 +75,32 @@ fun CourseCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            val hasResources = course.lectureNotesUrl.isNotBlank() || course.pastQuestionsUrl.isNotBlank()
+            val hasNotes = course.lectureNotesUrl.isNotBlank()
+            val hasPqs = course.pastQuestionsUrl.isNotBlank()
 
-            if (hasResources) {
-                OutlinedButton(
-                    onClick = onViewResources,
+            if (hasNotes || hasPqs) {
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("📂 Open Course Resources", style = MaterialTheme.typography.labelLarge)
+                    if (hasNotes) {
+                        OutlinedButton(
+                            onClick = onStudyNotes,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("📖 Study Notes", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                    if (hasPqs) {
+                        OutlinedButton(
+                            onClick = onPastQuestions,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("📝 Past Questions", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
                 }
             } else {
                 Text(
