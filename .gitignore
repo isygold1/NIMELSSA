@@ -25,7 +25,3 @@ captures/
 
 # Temp
 *.tmp
-
-# Secrets (API keys)
-secrets.xml
-app/src/main/res/values/secrets.xml
