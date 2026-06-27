@@ -51,7 +51,7 @@ fun RadialProgress(
             // Background circle
             drawCircle(
                 color = trackColor,
-                style = stroke.copy(width = strokeWidth.toPx() * 0.8f)
+                style = Stroke(width = strokeWidth.toPx() * 0.8f, cap = StrokeCap.Round)
             )
             // Progress arc
             drawArc(

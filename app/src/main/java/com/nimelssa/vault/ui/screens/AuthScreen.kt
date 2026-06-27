@@ -91,10 +91,14 @@ fun AuthScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // Segmented control
+            val buttonShape = SegmentedButtonDefaults.itemShape(
+                index = 0, count = 2
+            )
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 SegmentedButton(
                     selected = authMode == AuthMode.LOGIN,
                     onClick = { onToggleMode(AuthMode.LOGIN) },
+                    shape = buttonShape,
                     colors = SegmentedButtonDefaults.colors(
                         activeContainerColor = Color.White,
                         activeContentColor = MaterialTheme.colorScheme.primary
@@ -103,6 +107,7 @@ fun AuthScreen(
                 SegmentedButton(
                     selected = authMode == AuthMode.SIGNUP,
                     onClick = { onToggleMode(AuthMode.SIGNUP) },
+                    shape = buttonShape,
                     colors = SegmentedButtonDefaults.colors(
                         activeContainerColor = Color.White,
                         activeContentColor = MaterialTheme.colorScheme.primary
@@ -162,10 +167,14 @@ fun AuthScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             // Role selector
+            val roleShape = SegmentedButtonDefaults.itemShape(
+                index = 0, count = 2
+            )
             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                 SegmentedButton(
                     selected = selectedRole == UserRole.STUDENT,
                     onClick = { selectedRole = UserRole.STUDENT },
+                    shape = roleShape,
                     colors = SegmentedButtonDefaults.colors(
                         activeContainerColor = Color.White,
                         activeContentColor = MaterialTheme.colorScheme.primary
@@ -174,6 +183,7 @@ fun AuthScreen(
                 SegmentedButton(
                     selected = selectedRole == UserRole.REP,
                     onClick = { selectedRole = UserRole.REP },
+                    shape = roleShape,
                     colors = SegmentedButtonDefaults.colors(
                         activeContainerColor = Color.White,
                         activeContentColor = MaterialTheme.colorScheme.primary

@@ -63,10 +63,14 @@ fun ProposeScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // Upload mode selector
+        val uploadShape = SegmentedButtonDefaults.itemShape(
+            index = 0, count = 2
+        )
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             SegmentedButton(
                 selected = uploadMode == "link",
                 onClick = { uploadMode = "link" },
+                shape = uploadShape,
                 colors = SegmentedButtonDefaults.colors(
                     activeContainerColor = MaterialTheme.colorScheme.primary,
                     activeContentColor = MaterialTheme.colorScheme.onPrimary
@@ -75,6 +79,7 @@ fun ProposeScreen(
             SegmentedButton(
                 selected = uploadMode == "file",
                 onClick = { uploadMode = "file" },
+                shape = uploadShape,
                 colors = SegmentedButtonDefaults.colors(
                     activeContainerColor = MaterialTheme.colorScheme.primary,
                     activeContentColor = MaterialTheme.colorScheme.onPrimary

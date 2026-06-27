@@ -11,7 +11,9 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 
 enum class BottomNavTab(val label: String, val icon: ImageVector) {
     WORKSPACE("Workspace", Icons.Default.Book),
@@ -31,7 +33,7 @@ fun BottomNavBar(
 
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,
-        tonalElevation = androidx.compose.ui.unit.dp.times(0),
+        tonalElevation = 0.dp,
         modifier = modifier
     ) {
         tabs.forEach { tab ->
