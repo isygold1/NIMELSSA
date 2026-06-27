@@ -204,6 +204,8 @@ fun MainApp() {
                     )
                 }
 
+                // AdminScreen also handles the old Admin tab — just pass repLevel
+
                 composable(Routes.ADMIN) {
                     AdminScreen(
                         repLevel = userState.repLevel,

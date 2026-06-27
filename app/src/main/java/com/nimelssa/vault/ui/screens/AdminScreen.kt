@@ -13,11 +13,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -42,13 +45,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nimelssa.vault.data.AiMatchedItem
+import com.nimelssa.vault.data.AiPreview
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
+import com.nimelssa.vault.data.DriveScanner
+import com.nimelssa.vault.data.DriveScanner.ScanResult
+import com.nimelssa.vault.data.FilenameParser
 import com.nimelssa.vault.data.FirestoreCourseSync
+import com.nimelssa.vault.data.Proposal
+import com.nimelssa.vault.data.ProposalRepository
 import com.nimelssa.vault.data.UserRole
 import com.nimelssa.vault.data.UserSession
 import kotlinx.coroutines.launch
 
+/**
+ * Rep Desk / Admin Console with AI-powered proposal scanning.
+ *
+ * Reps see proposals whose AI results match their level.
+ * Admins see all proposals.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminScreen(
@@ -60,21 +76,30 @@ fun AdminScreen(
     val isAdmin = user.role == UserRole.ADMIN
     val canManage = isAdmin || user.role == UserRole.REP
     val allCourses by CourseRepository.courses.collectAsState()
+    val proposals by ProposalRepository.proposals.collectAsState()
 
-    var showAddForm by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    var showAddForm by remember { mutableStateOf(false) }
 
-    // Pending proposals for this rep's level (all, not just first)
-    val allPending = CourseRepository.getPendingCourses()
-    val pendingForLevel = if (isAdmin) allPending
-                          else allPending.filter { it.level == repLevel }
+    // ── Filter proposals for rep's level ──
+    val pendingProposals = if (isAdmin) {
+        proposals.filter { it.status == "pending" }
+    } else {
+        proposals.filter { it.status == "pending" && matchesRepLevel(it, repLevel) }
+    }
+
+    // Track which proposals have been scanned (in-memory during this session)
+    var scannedMap by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    // Track scanning state per proposal
+    var scanningId by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        // Header
+        // ── Header ──
         Text(
             text = if (isAdmin) "🛡️ Admin Console — Full Authority"
                    else "🛡️ ${repLevel}L Rep Desk",
@@ -82,142 +107,56 @@ fun AdminScreen(
             color = MaterialTheme.colorScheme.error,
             fontWeight = FontWeight.Bold
         )
-
         Spacer(modifier = Modifier.height(4.dp))
-
         Text(
-            text = if (isAdmin) "Manage all courses and approve proposals across all levels."
+            text = if (isAdmin) "AI scans Drive links and auto-classifies resources."
                    else "Review proposals and manage courses for your level.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── All pending proposals ──
-        if (pendingForLevel.isNotEmpty()) {
+        // ── Pending Proposals ──
+        if (pendingProposals.isNotEmpty()) {
             Text(
-                text = "⏳ Pending Proposals (${pendingForLevel.size})",
+                text = "⏳ Pending Proposals (${pendingProposals.size})",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFFFBBF24)
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            pendingForLevel.forEach { pending ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color(0xFFF59E0B)),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1917))
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        // Course code + name
-                        Text(
-                            text = "${pending.code} — ${pending.name}",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White
-                        )
-                        // Meta info
-                        Text(
-                            text = "${pending.category} • ${pending.displaySemester}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF94A3B8)
-                        )
-                        // Submitted by
-                        if (pending.submittedBy.isNotBlank()) {
-                            Text(
-                                text = "Submitted by: ${pending.submittedBy}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF6B7280)
-                            )
+            pendingProposals.forEach { proposal ->
+                ProposalCard(
+                    proposal = proposal,
+                    isScanning = scanningId == proposal.id,
+                    hasScanned = scannedMap[proposal.id] == true,
+                    onScan = {
+                        scanningId = proposal.id
+                        scope.launch {
+                            scanProposal(proposal)
+                            scannedMap = scannedMap + (proposal.id to true)
+                            scanningId = null
                         }
-
-                        // ── Resource info ──
-                        Spacer(modifier = Modifier.height(6.dp))
-                        if (pending.lectureNotesUrl.isNotBlank()) {
-                            Text(
-                                text = "📖 Notes: ${truncateUrl(pending.lectureNotesUrl)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF93C5FD),
-                                maxLines = 1
-                            )
+                    },
+                    onEdit = { /* TODO: inline edit mode */ },
+                    onApprove = {
+                        scope.launch {
+                            approveProposal(proposal, user.email)
                         }
-                        if (pending.pastQuestionsUrl.isNotBlank()) {
-                            Text(
-                                text = "📝 PQs: ${truncateUrl(pending.pastQuestionsUrl)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF93C5FD),
-                                maxLines = 1
-                            )
-                        }
-                        if (pending.notes.isNotBlank()) {
-                            Text(
-                                text = "📌 ${pending.notes}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFFD1D5DB),
-                                maxLines = 2
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // ── Action buttons ──
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            // Preview button
-                            if (pending.hasResources) {
-                                Button(
-                                    onClick = { onPreview(pending) },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color(0xFF6366F1)
-                                    )
-                                ) { Text("👁️ Preview", fontWeight = FontWeight.Bold) }
-                                Spacer(modifier = Modifier.width(6.dp))
-                            }
-                            // Approve button
-                            Button(
-                                onClick = {
-                                    CourseRepository.approveCourse(pending.code)
-                                    scope.launch {
-                                        FirestoreCourseSync.saveResources(
-                                            code = pending.code,
-                                            lectureNotesUrl = pending.lectureNotesUrl,
-                                            pastQuestionsUrl = pending.pastQuestionsUrl,
-                                            submittedBy = pending.submittedBy,
-                                            notes = pending.notes
-                                        )
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
-                            ) { Text("✅ Approve", fontWeight = FontWeight.Bold) }
-                            Spacer(modifier = Modifier.width(6.dp))
-                            // Reject button
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        FirestoreCourseSync.removeResources(pending.code)
-                                    }
-                                    CourseRepository.rejectCourse(pending.code)
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
-                            ) { Text("❌ Reject", fontWeight = FontWeight.Bold) }
+                    },
+                    onReject = {
+                        scope.launch {
+                            ProposalRepository.reject(proposal.id)
                         }
                     }
-                }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
             }
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        // ── Add New Course (admin & reps) ──
+        // ── Add Course Form ──
         if (canManage) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -244,38 +183,443 @@ fun AdminScreen(
             if (showAddForm) {
                 AddCourseForm(
                     initialLevel = if (isAdmin) "100" else repLevel,
-                    lockLevel = !isAdmin, // reps can only add to their level
+                    lockLevel = !isAdmin,
                     onAdded = { showAddForm = false }
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
 
-        // ── Manage Courses ──
+        // ── Course Inventory ──
         Text(
             text = "📚 Course Inventory ${if (!isAdmin) "(Level $repLevel only)" else ""}",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold
         )
-
         Spacer(modifier = Modifier.height(8.dp))
 
         val displayCourses = if (isAdmin) allCourses
                              else allCourses.filter { it.level == repLevel }
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(displayCourses) { course ->
-                CourseManageRow(
-                    course = course,
-                    canDelete = isAdmin || course.level == repLevel
+        displayCourses.forEach { course ->
+            CourseManageRow(
+                course = course,
+                canDelete = isAdmin || course.level == repLevel,
+                onPreview = { onPreview(course) }
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PROPOSAL CARD
+// ═══════════════════════════════════════════════════════════════
+
+@Composable
+private fun ProposalCard(
+    proposal: Proposal,
+    isScanning: Boolean,
+    hasScanned: Boolean,
+    onScan: () -> Unit,
+    onEdit: () -> Unit,
+    onApprove: () -> Unit,
+    onReject: () -> Unit
+) {
+    val aiPreview = proposal.aiPreview
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1917))
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Submitter info
+            Text(
+                text = "From: ${proposal.submittedByName} (${proposal.submittedBy})",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF94A3B8)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Link (truncated)
+            Text(
+                text = "🔗 ${truncateUrl(proposal.driveLink)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF93C5FD),
+                maxLines = 1
+            )
+            if (proposal.notes.isNotBlank()) {
+                Text(
+                    text = "📌 ${proposal.notes}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFD1D5DB),
+                    maxLines = 2
                 )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // ── Scan section ──
+            if (!hasScanned && !isScanning) {
+                Button(
+                    onClick = onScan,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1))
+                ) {
+                    Text("🔍 Scan with AI", fontWeight = FontWeight.Bold)
+                }
+            }
+
+            if (isScanning) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.padding(end = 8.dp),
+                        color = Color(0xFF6366F1),
+                        strokeWidth = 2.dp
+                    )
+                    Text(
+                        "🔍 Scanning Drive link...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF93C5FD)
+                    )
+                }
+            }
+
+            // ── AI Preview (after scan) ──
+            if (hasScanned && aiPreview != null) {
+                AiPreviewSection(aiPreview = aiPreview)
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // ── Action buttons ──
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = onApprove,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
+                    ) { Text("✅ Approve All", fontWeight = FontWeight.Bold) }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Button(
+                        onClick = onReject,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                    ) { Text("❌ Reject", fontWeight = FontWeight.Bold) }
+                }
+
+                if (aiPreview.scanStatus == "partial") {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "⚠️ Some files couldn't be matched. Approve only the matched ones above, or reject the proposal.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFFBBF24)
+                    )
+                }
             }
         }
     }
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  AI PREVIEW SECTION
+// ═══════════════════════════════════════════════════════════════
+
 @Composable
-private fun CourseManageRow(course: Course, canDelete: Boolean) {
+private fun AiPreviewSection(aiPreview: AiPreview) {
+    when (aiPreview.scanStatus) {
+        "failed" -> {
+            Text(
+                text = "❌ Scan failed: ${aiPreview.errorMessage}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFFF87171)
+            )
+        }
+        "success", "partial" -> {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "── AI Scan Results ──",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF94A3B8)
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Summary
+            val statusIcon = if (aiPreview.scanStatus == "success") "✅" else "⚠️"
+            Text(
+                text = "$statusIcon ${aiPreview.matchedItems.size} resources found from ${aiPreview.totalFilesScanned} files",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (aiPreview.scanStatus == "success") Color(0xFF4ADE80) else Color(0xFFFBBF24)
+            )
+
+            // Matched items
+            aiPreview.matchedItems.forEach { item ->
+                val icon = when (item.resourceType) {
+                    "LN" -> "📖"
+                    "PQ" -> "📝"
+                    "TB" -> "📚"
+                    else -> "📄"
+                }
+                Text(
+                    text = "$icon ${item.courseCode} → ${item.resourceLabel} (${item.fileName})",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFD1D5DB),
+                    modifier = Modifier.padding(start = 8.dp, top = 2.dp)
+                )
+            }
+
+            // Unmatched files
+            if (aiPreview.unmatchedFiles.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "⚠️ Unmatched (${aiPreview.unmatchedFiles.size}):",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFFBBF24)
+                )
+                aiPreview.unmatchedFiles.forEach { uf ->
+                    Text(
+                        text = "   ${uf.fileName} — ${uf.reason}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFF87171),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+        else -> {
+            Text(
+                text = "⏳ Scan pending...",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF94A3B8)
+            )
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SCANNING LOGIC
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Scan a proposal's Drive link and update its AI preview.
+ */
+private suspend fun scanProposal(proposal: Proposal) {
+    val result = DriveScanner.scanLink(proposal.driveLink)
+
+    if (result.error.isNotBlank()) {
+        ProposalRepository.updateAiPreview(
+            proposal.id,
+            AiPreview(
+                scanStatus = "failed",
+                errorMessage = result.error
+            )
+        )
+        return
+    }
+
+    if (result.files.isEmpty()) {
+        ProposalRepository.updateAiPreview(
+            proposal.id,
+            AiPreview(
+                scanStatus = "failed",
+                totalFilesScanned = 0,
+                sourceFolderName = result.folderName,
+                errorMessage = "No files found in the link."
+            )
+        )
+        return
+    }
+
+    // Parse each file
+    val matchedItems = mutableListOf<AiMatchedItem>()
+    val unmatchedFiles = mutableListOf<com.nimelssa.vault.data.AiUnmatchedFile>()
+
+    for (file in result.files) {
+        val parseResult = FilenameParser.parse(file.name)
+
+        if (parseResult.courseCode != null && parseResult.confidence != FilenameParser.Confidence.NONE) {
+            val resourceLabel = when (parseResult.resourceType) {
+                "LN" -> "Lecture Notes"
+                "PQ" -> "Past Questions"
+                "TB" -> "Textbook"
+                else -> "Other"
+            }
+
+            // Look up the course in the repository for its full name/level/semester
+            val existingCourse = CourseRepository.findCourse(parseResult.courseCode)
+            val courseName = existingCourse?.name ?: parseResult.courseCode
+            val level = existingCourse?.level ?: inferLevelFromCode(parseResult.courseCode)
+            val semester = parseResult.semester ?: existingCourse?.semester ?: 1
+
+            matchedItems.add(
+                AiMatchedItem(
+                    courseCode = parseResult.courseCode,
+                    courseName = courseName,
+                    level = level,
+                    semester = semester,
+                    resourceType = parseResult.resourceType ?: "OT",
+                    resourceLabel = resourceLabel,
+                    fileName = file.name,
+                    fileId = file.id
+                )
+            )
+        } else {
+            unmatchedFiles.add(
+                com.nimelssa.vault.data.AiUnmatchedFile(
+                    fileName = file.name,
+                    reason = parseResult.reason,
+                    fileId = file.id
+                )
+            )
+        }
+    }
+
+    val preview = AiPreview(
+        scanStatus = if (unmatchedFiles.isEmpty()) "success" else "partial",
+        matchedItems = matchedItems,
+        unmatchedFiles = unmatchedFiles,
+        totalFilesScanned = result.files.size,
+        sourceFolderName = result.folderName
+    )
+
+    ProposalRepository.updateAiPreview(proposal.id, preview)
+}
+
+/**
+ * Approve a proposal: write all matched resources to Firestore and clean up.
+ */
+private suspend fun approveProposal(proposal: Proposal, reviewerEmail: String) {
+    val preview = proposal.aiPreview ?: return
+
+    // For each matched item, save the master folder link to course_resources
+    val masterFolderUrl = proposal.driveLink
+
+    // Group matched items by course code to combine LN and PQ into one save
+    val groupedByCode = preview.matchedItems.groupBy { it.courseCode }
+
+    for ((courseCode, items) in groupedByCode) {
+        val lectureNotesUrl = if (items.any { it.resourceType == "LN" }) masterFolderUrl else ""
+        val pastQuestionsUrl = if (items.any { it.resourceType == "PQ" }) masterFolderUrl else ""
+
+        // Also check if existing course has resources we should keep
+        val existing = CourseRepository.findCourse(courseCode)
+        val finalLnu = lectureNotesUrl.ifBlank { existing?.lectureNotesUrl ?: "" }
+        val finalPqu = pastQuestionsUrl.ifBlank { existing?.pastQuestionsUrl ?: "" }
+
+        // Save combined notes from all items and original proposal
+        val notesSummary = items.joinToString("; ") {
+            "[${it.resourceLabel}] from ${it.fileName}"
+        }
+        val finalNotes = listOfNotNull(
+            proposal.notes.takeIf { it.isNotBlank() },
+            notesSummary.takeIf { it.isNotBlank() }
+        ).joinToString(" | ")
+
+        // Update CourseRepository in memory
+        if (existing != null) {
+            CourseRepository.mergeCourseResources(
+                code = courseCode,
+                lectureNotesUrl = finalLnu,
+                pastQuestionsUrl = finalPqu,
+                submittedBy = proposal.submittedBy,
+                notes = finalNotes
+            )
+            // Remove pending flag if it exists
+            CourseRepository.approveCourse(courseCode)
+        } else {
+            // Create new course entry
+            val firstItem = items.first()
+            CourseRepository.addCourse(
+                Course(
+                    code = courseCode,
+                    name = firstItem.courseName,
+                    category = inferCategory(courseCode),
+                    level = firstItem.level,
+                    semester = firstItem.semester,
+                    progress = 0,
+                    isPending = false,
+                    lectureNotesUrl = finalLnu,
+                    pastQuestionsUrl = finalPqu,
+                    submittedBy = proposal.submittedBy,
+                    notes = finalNotes
+                )
+            )
+        }
+
+        // Save to Firestore
+        FirestoreCourseSync.saveResources(
+            code = courseCode,
+            lectureNotesUrl = finalLnu,
+            pastQuestionsUrl = finalPqu,
+            submittedBy = proposal.submittedBy,
+            notes = finalNotes
+        )
+    }
+
+    // Mark the proposal as approved
+    ProposalRepository.approve(proposal.id, reviewerEmail)
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+
+/** Infer level (100, 200, 300, 400) from course code like "CSC201" */
+private fun inferLevelFromCode(code: String): String {
+    val digit = code.firstOrNull { it.isDigit() } ?: '2'
+    return "${digit}00"
+}
+
+/** Infer category from course code prefix */
+private fun inferCategory(code: String): String = when {
+    code.startsWith("BIO") -> "BIOLOGY"
+    code.startsWith("CHM") -> "CHEMISTRY"
+    code.startsWith("PHY") -> "PHYSICS"
+    code.startsWith("BCH") -> "BIOCHEMISTRY"
+    code.startsWith("MLS") -> "MEDICAL LABORATORY SCIENCE"
+    code.startsWith("GST") -> "GENERAL STUDIES"
+    code.startsWith("STA") -> "MATHEMATICS"
+    code.startsWith("CSC") -> "COMPUTER SCIENCE"
+    else -> "MEDICAL LABORATORY SCIENCE"
+}
+
+/** Check if a proposal's AI results match a rep's level */
+private fun matchesRepLevel(proposal: Proposal, repLevel: String): Boolean {
+    val preview = proposal.aiPreview ?: return false
+    return preview.matchedItems.any { it.level == repLevel }
+}
+
+/** Truncate a URL for display */
+private fun truncateUrl(url: String): String {
+    return try {
+        val u = java.net.URL(url)
+        val host = u.host.removePrefix("www.")
+        val path = u.path
+        if (path.length > 25) "${host}...${path.takeLast(15)}"
+        else "${host}${path}"
+    } catch (_: Exception) {
+        if (url.length > 35) url.take(32) + "..." else url
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  COURSE MANAGEMENT ROW
+// ═══════════════════════════════════════════════════════════════
+
+@Composable
+private fun CourseManageRow(
+    course: Course,
+    canDelete: Boolean,
+    onPreview: () -> Unit
+) {
     val scope = rememberCoroutineScope()
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -305,21 +649,51 @@ private fun CourseManageRow(course: Course, canDelete: Boolean) {
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // Show resource indicators
+                if (course.lectureNotesUrl.isNotBlank() || course.pastQuestionsUrl.isNotBlank()) {
+                    Text(
+                        text = buildString {
+                            if (course.lectureNotesUrl.isNotBlank()) append("📖 LN")
+                            if (course.lectureNotesUrl.isNotBlank() && course.pastQuestionsUrl.isNotBlank()) append(" | ")
+                            if (course.pastQuestionsUrl.isNotBlank()) append("📝 PQ")
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
-            if (canDelete) {
-                Text(
-                    text = "🗑️",
-                    modifier = Modifier.clickable {
-                        scope.launch {
-                            FirestoreCourseSync.removeResources(course.code)
-                        }
-                        CourseRepository.removeCourse(course.code)
-                    }
-                )
+            Row {
+                if (course.hasResources) {
+                    Button(
+                        onClick = onPreview,
+                        modifier = Modifier.padding(end = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF6366F1)
+                        ),
+                        contentPadding = ButtonDefaults.ButtonWithIconContentPadding
+                    ) { Text("👁️", style = MaterialTheme.typography.labelSmall) }
+                }
+                if (canDelete) {
+                    Text(
+                        text = "🗑️",
+                        modifier = Modifier.clickable {
+                            scope.launch {
+                                FirestoreCourseSync.removeResources(course.code)
+                            }
+                            CourseRepository.removeCourse(course.code)
+                        },
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
             }
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  ADD COURSE FORM
+// ═══════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -379,7 +753,6 @@ private fun AddCourseForm(
 
             Row(modifier = Modifier.fillMaxWidth()) {
                 if (lockLevel) {
-                    // Rep: show level as read-only
                     OutlinedTextField(
                         value = "${level} Level",
                         onValueChange = {},
@@ -390,7 +763,6 @@ private fun AddCourseForm(
                         shape = RoundedCornerShape(8.dp)
                     )
                 } else {
-                    // Admin: pick any level
                     ExposedDropdownMenuBox(
                         expanded = levelExpanded,
                         onExpandedChange = { levelExpanded = it }
@@ -460,18 +832,5 @@ private fun AddCourseForm(
                 Text("Add to Vault", fontWeight = FontWeight.Bold)
             }
         }
-    }
-}
-
-/** Truncate a URL for display in the proposal card. */
-private fun truncateUrl(url: String): String {
-    return try {
-        val u = java.net.URL(url)
-        val host = u.host.removePrefix("www.")
-        val path = u.path
-        if (path.length > 25) "${host}...${path.takeLast(15)}"
-        else "${host}${path}"
-    } catch (_: Exception) {
-        if (url.length > 35) url.take(32) + "..." else url
     }
 }
