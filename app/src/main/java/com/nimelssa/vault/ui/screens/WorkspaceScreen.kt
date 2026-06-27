@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
+import com.nimelssa.vault.data.UserSession
 import com.nimelssa.vault.ui.components.CourseCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,7 +45,8 @@ fun WorkspaceScreen(
     onOpenViewer: (Course) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedLevel by remember { mutableStateOf("200") }
+    val userState by UserSession.state.collectAsState()
+    var selectedLevel by remember { mutableStateOf(userState.effectiveLevel) }
     var selectedSemester by remember { mutableIntStateOf(1) }
     var levelExpanded by remember { mutableStateOf(false) }
     val levels = listOf("100", "200", "300", "400")

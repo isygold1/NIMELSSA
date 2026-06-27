@@ -16,7 +16,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -114,7 +117,7 @@ fun AuthScreen(
                 localError = "Passwords do not match. Please re-enter."
                 return
             }
-            onSignup(name.trim(), email.trim(), password, UserRole.STUDENT, "")
+            onSignup(name.trim(), email.trim(), password, UserRole.STUDENT, selectedLevel)
         } else {
             if (email.isBlank() || !email.contains("@")) {
                 localError = "Please enter a valid email address."
@@ -334,6 +337,49 @@ fun AuthScreen(
                     ),
                     shape = RoundedCornerShape(8.dp)
                 )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Academic Level picker (signup only)
+                var levelExpanded by remember { mutableStateOf(false) }
+                var selectedLevel by remember { mutableStateOf("100") }
+                ExposedDropdownMenuBox(
+                    expanded = levelExpanded,
+                    onExpandedChange = { levelExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = "${selectedLevel} Level",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Your Current Academic Level") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = levelExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        singleLine = true,
+                        enabled = !isLoading,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = Color(0xFF23314F),
+                            unfocusedContainerColor = Color(0xFF1C273E),
+                            focusedContainerColor = Color(0xFF1C273E),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedLabelColor = Color(0xFFCBD5E1),
+                            unfocusedLabelColor = Color(0xFFCBD5E1),
+                            cursorColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    ExposedDropdownMenu(
+                        expanded = levelExpanded,
+                        onDismissRequest = { levelExpanded = false }
+                    ) {
+                        listOf("100", "200", "300", "400").forEach { lvl ->
+                            DropdownMenuItem(
+                                text = { Text("${lvl} Level") },
+                                onClick = { selectedLevel = lvl; levelExpanded = false }
+                            )
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(14.dp))
             }
 

@@ -17,10 +17,13 @@ data class UserState(
     val name: String = "",
     val email: String = "",
     val role: UserRole = UserRole.STUDENT,
+    val level: String = "100",
     val repLevel: String = "200",
     val authMode: AuthMode = AuthMode.LOGIN,
     val errorMessage: String? = null
 )
+/** Convenience: the user's academic level (repLevel for reps, level for others). */
+val UserState.effectiveLevel: String get() = if (role == UserRole.REP) repLevel else level
 
 object UserSession {
     private const val TAG = "UserSession"
@@ -58,6 +61,7 @@ object UserSession {
                     val name = (data["name"] as? String) ?: ""
                     val email = (data["email"] as? String) ?: fallbackEmail
                     val roleStr = (data["role"] as? String) ?: "student"
+                    val level = (data["level"] as? String) ?: "100"
                     val repLevel = (data["repLevel"] as? String) ?: "200"
                     val role = when (roleStr) {
                         "admin" -> UserRole.ADMIN
@@ -70,6 +74,7 @@ object UserSession {
                         name = name,
                         email = email,
                         role = role,
+                        level = level,
                         repLevel = repLevel
                     )
                     Log.d(TAG, "Profile loaded: $name ($role)")
@@ -94,7 +99,7 @@ object UserSession {
 
     // ───── SIGN UP ────────────────────────────────────────────────────────
 
-    fun signUp(name: String, email: String, password: String, role: UserRole, repLevel: String) {
+    fun signUp(name: String, email: String, password: String, role: UserRole, level: String) {
         _state.value = _state.value.copy(isLoading = true, errorMessage = null)
 
         auth.createUserWithEmailAndPassword(email, password)
@@ -118,10 +123,11 @@ object UserSession {
                             UserRole.REP -> "rep"
                             UserRole.STUDENT -> "student"
                         },
+                        "level" to level,
                         "createdAt" to FieldValue.serverTimestamp()
                     )
                     if (role == UserRole.REP) {
-                        userData["repLevel"] = repLevel
+                        userData["repLevel"] = level
                     }
 
                     // Write to Firestore
@@ -134,7 +140,8 @@ object UserSession {
                                     name = name,
                                     email = email,
                                     role = role,
-                                    repLevel = repLevel
+                                    level = level,
+                                    repLevel = if (role == UserRole.REP) level else "200"
                                 )
                                 Log.d(TAG, "Sign up + Firestore write complete for: $email")
                             } else {
