@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="NIMELSSA Vault">
+    <meta name="description" content="NIMELSSA Vault — Central Academic Repository for Medical Laboratory Science">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <title>NIMELSSA Vault - Production System</title>
+    <style>
+        :root {
+            /* Application Design Token Matrix */
+            --bg-app: #0f172a;
+            --bg-canvas: #f8fafc;
+            --surface: #ffffff;
+            --primary: #0f766e; /* Academic Teal Tone */
+            --primary-light: #f0fdfa;
+            --text-dark: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --accent-blue: #0284c7;
+            --accent-blue-light: #f0f9ff;
+            --error: #dc2626;
+            --error-light: #fef2f2;
+            --amber-alert: #d97706;
+            --amber-bg: #fef3c7;
+            --success: #16a34a;
+            --success-light: #f0fdf4;
+            --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #334155;
+            margin: 0; padding: 20px;
+            display: flex; justify-content: center; align-items: center;
+            min-height: 100vh;
+        }
+
+        /* Mobile Simulation Master Frame */
+        .phone-frame {
+            width: 385px; height: 820px;
+            background-color: var(--bg-canvas);
+            border-radius: 40px; border: 8px solid var(--bg-app);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+            display: flex; flex-direction: column;
+            overflow: hidden; position: relative;
+        }
+
+        /* 1. AUTHENTICATION HUB GATEWAY (MATCHING THE SCREENSHOT STYLING) */
+        .auth-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #0f172a; z-index: 200;
+            display: flex; flex-direction: column; justify-content: center;
+            padding: 30px; box-sizing: border-box; color: #fff;
+            overflow-y: auto;
+        }
+
+        .auth-logo-section { text-align: center; margin-bottom: 24px; }
+        .auth-logo { font-size: 44px; display: inline-block; margin-bottom: 8px; color: #94a3b8; }
+        .auth-screen h2 { margin: 0; font-size: 20px; font-weight: 800; color: #f8fafc; letter-spacing: 0.5px; }
+        .auth-screen p { margin: 4px 0 0 0; font-size: 11px; color: #94a3b8; }
+
+        /* Segmented Mode Selector Tabs */
+        .input-mode-tabs {
+            display: flex; background: #1e293b; padding: 4px; border-radius: 8px; margin-bottom: 20px;
+        }
+        .mode-tab-btn {
+            flex: 1; border: none; background: transparent; padding: 10px;
+            font-size: 11px; font-weight: 700; color: #94a3b8; cursor: pointer; border-radius: 6px;
+            transition: var(--transition-smooth);
+        }
+        .mode-tab-btn.active {
+            background: var(--surface); color: var(--primary);
+        }
+
+        /* 2. NAVIGATION SIDE DRAWER OVERLAY WRAPPER */
+        .drawer-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(15, 23, 42, 0.5); z-index: 250;
+            display: none; opacity: 0; transition: opacity 0.25s ease;
+        }
+        .nav-drawer {
+            width: 280px; height: 100%; background: var(--surface);
+            box-shadow: 4px 0 24px rgba(0,0,0,0.15);
+            display: flex; flex-direction: column;
+            transform: translateX(-100%); transition: var(--transition-smooth);
+        }
+        .drawer-header { background: var(--primary); padding: 35px 20px 20px 20px; color: white; }
+        .drawer-menu { padding: 12px 0; flex: 1; }
+        .drawer-item { display: flex; align-items: center; gap: 14px; padding: 14px 24px; color: var(--text-dark); text-decoration: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: var(--transition-smooth); }
+        .drawer-item:hover { background: var(--bg-canvas); color: var(--primary); padding-left: 28px; }
+
+        /* 3. CONTAINED NATIVE IN-APP DOCUMENT READER VIEW */
+        .native-viewer-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(15, 23, 42, 0.6); z-index: 290;
+            display: none; flex-direction: column; justify-content: flex-end;
+        }
+        .viewer-window {
+            height: 90%; background: var(--surface);
+            border-radius: 24px 24px 0 0; display: flex;
+            flex-direction: column; overflow: hidden;
+            box-shadow: 0 -10px 25px rgba(0,0,0,0.1);
+        }
+        .viewer-header { padding: 14px 16px; background: #f1f5f9; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .viewer-body-canvas { flex: 1; background: #e2e8f0; display: flex; flex-direction: column; padding: 20px; position: relative; }
+
+        /* FLOATING QUICK WEB CONTEXT SEARCH ACTION BAR */
+        .context-search-bar { background: #1e293b; color: white; padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 12px rgba(0,0,0,0.15); margin-bottom: 12px; }
+        .context-search-link { color: #38bdf8; text-decoration: underline; cursor: pointer; margin-left: 6px; }
+        .document-selectable-text { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; font-size: 13px; line-height: 1.6; color: var(--text-dark); flex: 1; overflow-y: auto; text-align: left; }
+
+        /* ROUND VECTOR PROGRESS BAR BLUEPRINT */
+        .radial-progress-container { position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .radial-svg { transform: rotate(-90deg); width: 44px; height: 44px; }
+        .radial-bg-circle { fill: none; stroke: var(--border); stroke-width: 4; }
+        .radial-fill-circle { fill: none; stroke: var(--primary); stroke-width: 4; stroke-dasharray: 113; stroke-dashoffset: 113; transition: stroke-dashoffset 0.4s ease; }
+        .radial-percentage-text { position: absolute; font-size: 10px; font-weight: 700; color: var(--text-dark); text-align: center; }
+
+        /* FIXED APP HEADER SYSTEM BAR */
+        .app-header { background: var(--surface); padding: 16px; border-bottom: 1px solid var(--border); display: none; }
+        .header-main { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .header-left-cluster { display: flex; align-items: center; gap: 12px; }
+        .menu-trigger { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text-dark); padding: 0; outline: none; }
+        .brand h3 { margin: 0; font-size: 16px; color: var(--text-dark); font-weight: 800; }
+        .brand p { margin: 1px 0 0 0; font-size: 11px; color: var(--text-muted); font-weight: 600; }
+
+        .level-selector { background-color: var(--bg-canvas); border: 1px solid var(--border); padding: 6px 10px; border-radius: 8px; font-size: 11px; font-weight: 700; color: var(--primary); outline: none; cursor: pointer; }
+        .semester-toggle { display: flex; background: #f1f5f9; padding: 4px; border-radius: 8px; }
+        .sem-btn { flex: 1; border: none; background: transparent; padding: 6px; font-size: 11px; font-weight: 600; color: var(--text-muted); border-radius: 6px; cursor: pointer; transition: var(--transition-smooth); }
+        .sem-btn.active { background: var(--surface); color: var(--text-dark); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+
+        /* VIEW PANEL CORE MANAGER WRAPPERS */
+        .app-body { flex: 1; overflow-y: auto; padding: 16px; display: none; }
+        .view-panel { display: none; }
+        .view-panel.active { display: block; }
+
+        .subject-block-heading { font-size: 11px; font-weight: 800; color: var(--primary); background-color: var(--primary-light); padding: 6px 12px; border-radius: 6px; margin: 16px 0 10px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+        .course-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; position: relative; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.02); }
+        .card-header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+
+        .btn-row { display: flex; gap: 8px; }
+        .action-btn { flex: 1; background: var(--bg-canvas); border: 1px solid var(--border); padding: 8px; text-align: center; border-radius: 6px; font-size: 11px; font-weight: 600; text-decoration: none; color: var(--text-dark); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: var(--transition-smooth); }
+        .action-btn:hover { background-color: #e2e8f0; }
+
+        /* REUSABLE FORM DESIGN SYSTEM */
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .form-group { margin-bottom: 14px; text-align: left; }
+        .form-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: #cbd5e1; }
+        .app-body .form-group label { color: var(--text-dark); }
+        
+        /* Screenshot Accurate Inputs Formatting */
+        .form-control { 
+            width: 100%; padding: 12px; border: 1px solid #23314f; border-radius: 8px; 
+            font-size: 13px; box-sizing: border-box; outline: none; 
+            background: #1c273e; color: #ffffff; transition: var(--transition-smooth); 
+        }
+        .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.2); }
+        .form-control::placeholder { color: #526484; }
+        
+        /* Screenshot Accurate Main Submission Action Trigger Button */
+        .submit-trigger { 
+            width: 100%; padding: 14px; background: #0c826b; color: white; 
+            border: none; border-radius: 8px; font-weight: 700; font-size: 13px; 
+            cursor: pointer; transition: var(--transition-smooth); margin-top: 10px; 
+            box-shadow: 0 4px 12px rgba(12, 130, 107, 0.15);
+        }
+        .submit-trigger:hover { background-color: #0a6d58; }
+        
+        /* MICRO-FEEDBACK SYSTEM TOAST MESSAGES */
+        .status-notification-toast { padding: 12px; border-radius: 8px; font-size: 11px; font-weight: 500; line-height: 1.4; margin-bottom: 14px; display: none; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .status-notification-toast.success { background-color: var(--success-light); border: 1px solid #bbf7d0; color: var(--success); }
+        .status-notification-toast.info { background-color: var(--accent-blue-light); border: 1px solid #bae6fd; color: var(--accent-blue); }
+        .status-notification-toast.error { background-color: var(--error-light); border: 1px solid #fecaca; color: var(--error); }
+
+        .queue-card { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--amber-alert); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+        .meta-preview-box { background: var(--bg-canvas); border: 1px solid var(--border); padding: 8px; border-radius: 6px; font-size: 11px; line-height: 1.4; margin-bottom: 10px; color: var(--text-dark); }
+
+        /* FIXED LOWER APP NAVIGATION SYSTEM BAR */
+        .bottom-nav { background: var(--surface); border-top: 1px solid var(--border); padding: 10px 0; display: none; justify-content: space-around; }
+        .nav-tab { background: none; border: none; display: flex; flex-direction: column; align-items: center; font-size: 10px; font-weight: 600; color: var(--text-muted); cursor: pointer; transition: var(--transition-smooth); }
+        .nav-tab.active { color: var(--primary); }
+
+        /* DOC VIEWER ENHANCEMENTS */
+        .viewer-meta-strip { display:flex; align-items:center; gap:8px; background:#f1f5f9; border-radius:8px; padding:6px 10px; margin-bottom:10px; font-size:10px; flex-wrap:wrap; }
+        .doc-section-header { font-size:11px; font-weight:800; color:var(--primary); background:var(--primary-light); padding:6px 10px; border-radius:6px; margin-bottom:12px; letter-spacing:0.3px; }
+    </style>
+</head>
+<body>
+
+    <div class="phone-frame">
+        
+        <div id="auth-gate" class="auth-screen">
+            <div class="auth-logo-section">
+                <div class="auth-logo">🛡️</div>
+                <h2>NIMELSSA VAULT</h2>
+                <p id="auth-subtitle">Access Central Academic Repository</p>
+            </div>
+
+            <div class="input-mode-tabs">
+                <button class="mode-tab-btn active" id="btn-switch-login" onclick="toggleAuthFormMode('login')">Sign In</button>
+                <button class="mode-tab-btn" id="btn-switch-signup" onclick="toggleAuthFormMode('signup')">Sign Up</button>
+            </div>
+
+            <div id="auth-status-toast" class="status-notification-toast"></div>
+
+            <div class="form-group" id="group-signup-name" style="display:none;">
+                <label>Your Full Name</label>
+                <input type="text" class="form-control" id="authName" placeholder="Israel Oluwagbogo">
+            </div>
+
+            <div class="form-group">
+                <label>Active Personal Email Address</label>
+                <input type="email" class="form-control" id="authEmail" placeholder="yourname@gmail.com">
+            </div>
+
+            <div class="form-group">
+                <label>Account Profile Configuration Type</label>
+                <select id="authRole" class="form-control" onchange="handleRoleSelectionChange()">
+                    <option value="student">General Student Profile</option>
+                    <option value="rep" selected>Level Representative Admin</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="repLevelContainer">
+                <label>Assigned Class Rep Jurisdiction</label>
+                <select id="authRepLevel" class="form-control">
+                    <option value="100">100L Representative</option>
+                    <option value="200" selected>200L Representative</option>
+                    <option value="300">300L Representative</option>
+                    <option value="400">400L Representative</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Secure Password</label>
+                <input type="password" class="form-control" id="authPass" placeholder="••••••••">
+            </div>
+
+            <button onclick="handleAuthSubmissionAction()" id="authMainSubmitBtn" class="submit-trigger">
+                Authenticate Session Link
+            </button>
+        </div>
+
+        <div id="native-viewer" class="native-viewer-overlay">
+            <div class="viewer-window">
+                <div class="viewer-header">
+                    <span id="viewer-doc-title" style="font-size:12px; font-weight:700; color:var(--text-dark); max-width:50%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Viewing Document</span>
+                    <div style="display:flex; gap:6px;">
+                        <button onclick="executeOfflineCacheToggle()" id="viewer-offline-btn" style="background:var(--accent-blue); color:white; border:none; padding:4px 8px; font-size:11px; font-weight:700; border-radius:4px; cursor:pointer;">📥 Save Offline</button>
+                        <button onclick="closeInAppDocViewer()" style="background:none; border:none; font-size:12px; font-weight:700; color:var(--error); cursor:pointer;">Close</button>
+                    </div>
+                </div>
+                
+                <div class="viewer-body-canvas">
+                    <div class="context-search-bar" id="selection-lookup-bar" style="display:none; width:90%; position:absolute; top:12px; left:5%; z-index:10;">
+                        <span>Lookup Highlighted Text:</span>
+                        <span id="context-link-target"></span>
+                    </div>
+
+                    <!-- PRODUCTION NOTE: Replace .document-selectable-text content with fetched resource.
+                         Options: (a) Google Drive iframe embed for Drive Folder Link mode
+                                  (b) PDF.js renderer for uploaded documents
+                                  (c) Pre-rendered HTML notes from backend API
+                         Text selection → context search works on all three approaches. -->
+
+                    <div class="viewer-meta-strip">
+                        <span id="viewer-canvas-code" style="font-weight:800; color:var(--primary);">MLS 201</span>
+                        <span style="color:var(--text-muted);">•</span>
+                        <span id="viewer-page-counter" style="color:var(--text-muted);">Page 1 of 12</span>
+                        <span style="color:var(--text-muted);">•</span>
+                        <span style="color:var(--text-muted); font-size:10px;">Highlight text to search</span>
+                    </div>
+
+                    <div class="document-selectable-text" id="selectable-doc-body" onmouseup="evaluateTextSelectionHighlight()">
+                        <div class="doc-section-header">CHAPTER 1: INTRODUCTION TO MEDICAL LABORATORY SCIENCE</div>
+
+                        <p style="margin:0 0 10px 0;"><strong>1.1 Definition and Scope</strong></p>
+                        <p style="margin:0 0 12px 0;">Medical Laboratory Science (MLS) is the health profession concerned with the performance of laboratory analyses that aid in the diagnosis, treatment, and monitoring of patients. It encompasses disciplines including <span style="background:#fef9c3; padding:1px 2px; border-radius:2px;">Hematology</span>, Clinical Chemistry, <span style="background:#fef9c3; padding:1px 2px; border-radius:2px;">Microbiology</span>, Immunology, Blood Banking, and <span style="background:#fef9c3; padding:1px 2px; border-radius:2px;">Histopathology</span>.</p>
+
+                        <div style="background:var(--primary-light); border-left:3px solid var(--primary); padding:10px 12px; border-radius:0 6px 6px 0; margin:12px 0; font-size:11px;">
+                            <strong style="color:var(--primary);">KEY POINT:</strong> The MLSCN governs practice standards and professional registration for all MLS practitioners in Nigeria.
+                        </div>
+
+                        <p style="margin:0 0 10px 0;"><strong>1.2 Laboratory Divisions</strong></p>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:12px;">
+                            <div style="background:#f1f5f9; padding:8px; border-radius:6px; font-size:11px;"><strong>Hematology</strong><br><span style="color:var(--text-muted);">Blood cell analysis, coagulation</span></div>
+                            <div style="background:#f1f5f9; padding:8px; border-radius:6px; font-size:11px;"><strong>Clinical Chemistry</strong><br><span style="color:var(--text-muted);">Biochemical assays, enzymes</span></div>
+                            <div style="background:#f1f5f9; padding:8px; border-radius:6px; font-size:11px;"><strong>Microbiology</strong><br><span style="color:var(--text-muted);">Culture, sensitivity, serology</span></div>
+                            <div style="background:#f1f5f9; padding:8px; border-radius:6px; font-size:11px;"><strong>Histopathology</strong><br><span style="color:var(--text-muted);">Tissue processing, staining</span></div>
+                        </div>
+
+                        <p style="margin:0; font-size:11px; color:var(--text-muted); text-align:center; padding-top:8px; border-top:1px dashed var(--border);">— End of page 1 — Scroll for more —</p>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; margin-top:10px; gap:8px;">
+                        <button onclick="viewerNavigatePage(-1)" style="flex:1; background:var(--bg-canvas); border:1px solid var(--border); padding:7px; border-radius:6px; font-size:11px; font-weight:600; color:var(--text-muted); cursor:pointer;">← Previous</button>
+                        <button onclick="viewerNavigatePage(1)" style="flex:1; background:var(--primary); border:none; padding:7px; border-radius:6px; font-size:11px; font-weight:700; color:white; cursor:pointer;">Next Page →</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="drawer-zone" class="drawer-overlay" onclick="closeNavigationDrawer()">
+            <div class="nav-drawer" onclick="event.stopPropagation()">
+                <div class="drawer-header">
+                    <h3 style="margin:0; font-size:16px; font-weight:800;" id="drawer-user-title">Israel Oluwagbogo</h3>
+                    <p style="margin:4px 0 0 0; font-size:11px; opacity:0.85; font-weight:500;" id="drawer-user-meta">Student • Active Member</p>
+                </div>
+                <div class="drawer-menu">
+                    <div class="drawer-item" onclick="triggerDrawerNavRoute('cbt')">⏱️ CBT Exam Portal</div>
+                    <div class="drawer-item" onclick="triggerDrawerNavRoute('profile')">👤 Personal Information</div>
+                    <div class="drawer-item" onclick="triggerDrawerNavRoute('email-mod')">📧 Change Registered Email</div>
+                    <hr style="border:none; border-top:1px solid var(--border); margin:12px 0;">
+                    <div class="drawer-item" onclick="executeSystemLogOut()" style="color:var(--error);">🚪 Logout (End Session)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="app-header" id="mainHeader">
+            <div class="header-main">
+                <div class="header-left-cluster">
+                    <button class="menu-trigger" onclick="openNavigationDrawer()">☰</button>
+                    <div class="brand">
+                        <h3 id="app-title-banner">NIMELSSA Hub</h3>
+                        <p id="sub-banner-text">Verified Workspace</p>
+                    </div>
+                </div>
+                <select class="level-selector" id="levelState" onchange="renderWorkspaceTree()">
+                    <option value="100">100 Level</option>
+                    <option value="200" selected>200 Level</option>
+                    <option value="300">300 Level</option>
+                    <option value="400">400 Level</option>
+                </select>
+            </div>
+
+            <div class="semester-toggle" id="toggleStrip">
+                <button class="sem-btn active" id="sem1" onclick="shiftSemesterScope(1)">1st Semester</button>
+                <button class="sem-btn" id="sem2" onclick="shiftSemesterScope(2)">2nd Semester</button>
+            </div>
+        </div>
+
+        <div class="app-body" id="mainBody">
+            <div id="main-status-toast" class="status-notification-toast"></div>
+
+            <div class="view-panel active" id="panel-repo">
+                <div id="hierarchy-render-target"></div>
+            </div>
+
+            <div class="view-panel" id="panel-upload">
+                <div class="subject-block-heading" style="margin-top:0; background:var(--accent-blue-light); color:var(--accent-blue);">📤 Propose Academic Resource</div>
+                
+                <div class="input-mode-tabs">
+                    <button class="mode-tab-btn active" id="mode-link" onclick="switchUploadChannel('link')">Drive Folder Link</button>
+                    <button class="mode-tab-btn" id="mode-file" onclick="switchUploadChannel('file')">Local Document</button>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Target Course Code</label>
+                        <input type="text" class="form-control" id="propCourse" placeholder="e.g., BIO 202" style="background:#fff; color:#000; border-color:#cbd5e1;">
+                    </div>
+                    <div class="form-group">
+                        <label>Target Semester</label>
+                        <select class="form-control" id="propSemester" style="background:#fff; color:#000; border-color:#cbd5e1;">
+                            <option value="1">1st Semester</option>
+                            <option value="2">2nd Semester</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Resource Classification Type</label>
+                    <select class="form-control" id="propType" style="background:#fff; color:#000; border-color:#cbd5e1;">
+                        <option value="Lecture Notes">Official Lecture Notes / Slides</option>
+                        <option value="Past Questions">Past Examination / Test Questions (PQs)</option>
+                    </select>
+                </div>
+
+                <div id="input-container-link">
+                    <div class="form-group">
+                        <label>Google Drive Folder URL</label>
+                        <input type="url" class="form-control" id="folderUrlField" placeholder="https://drive.google.com/drive/folders/..." style="background:#fff; color:#000; border-color:#cbd5e1;">
+                    </div>
+                </div>
+
+                <div id="input-container-file" style="display:none;">
+                    <div class="form-group">
+                        <label>Upload Document Package</label>
+                        <div class="file-drop-zone" onclick="displayNotificationToast('main-status-toast', 'info', '📄 Document file loaded into app cache memory.')">
+                            📄 Tap to load PDF or Image Scan copy
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Useful Context / Contributor Notes</label>
+                    <textarea class="form-control" id="propNotes" rows="2" placeholder="e.g., Contains missing 2024 questions..." style="background:#fff; color:#000; border-color:#cbd5e1;"></textarea>
+                </div>
+
+                <button class="submit-trigger" onclick="publishProposalToPendingVault()">Submit to Verification Staging</button>
+            </div>
+
+            <div class="view-panel" id="panel-cbt">
+                <!-- CBT PORTAL: Coming soon — integrate after core repo features are stable.
+                     PRODUCTION PLAN:
+                     - Question bank API: GET /api/cbt/questions?course={code}&semester={sem}
+                     - Score submission: POST /api/cbt/submit { userId, courseCode, answers[], timeTaken }
+                     - Results history: GET /api/cbt/results?userId={id}
+                     - Use Fisher-Yates shuffle server-side to randomize question order per session
+                -->
+                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; padding:40px 20px; text-align:center;">
+                    <div style="width:72px; height:72px; background:var(--amber-bg); border-radius:20px; display:flex; align-items:center; justify-content:center; font-size:32px; margin-bottom:16px;">⏱️</div>
+                    <h3 style="color:var(--text-dark); margin:0 0 8px 0; font-weight:800; font-size:16px;">CBT Exam Portal</h3>
+                    <p style="font-size:12px; color:var(--text-muted); line-height:1.6; margin:0 0 20px 0; max-width:240px;">
+                        We're digitizing past exam questions into a full interactive CBT engine. Coming soon!
+                    </p>
+                    <div style="background:var(--amber-bg); border:1px solid #fcd34d; border-radius:10px; padding:12px 16px; width:100%; box-sizing:border-box;">
+                        <div style="font-size:11px; font-weight:700; color:var(--amber-alert); margin-bottom:8px;">PLANNED FEATURES</div>
+                        <div style="font-size:11px; color:var(--text-dark); text-align:left; line-height:2;">
+                            ✅ &nbsp;Timed practice sessions<br>
+                            ✅ &nbsp;Course-specific question banks<br>
+                            ✅ &nbsp;Instant score & answer review<br>
+                            ✅ &nbsp;Past results history
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="view-panel" id="panel-profile">
+                <div class="subject-block-heading" style="margin-top:0;">👤 Personal Information Registry</div>
+                <div class="form-group"><label>Account Name Reference</label><input type="text" class="form-control" id="profileNameTarget" value="Israel Oluwagbogo" readonly style="background:#f1f5f9; color:var(--text-muted); font-weight:600; border-color:#cbd5e1;"></div>
+                <div class="form-group"><label>Verified Access Email</label><input type="text" class="form-control" id="profileEmailTarget" value="student@gmail.com" readonly style="background:#f1f5f9; color:var(--text-muted); font-weight:600; border-color:#cbd5e1;"></div>
+            </div>
+
+            <div class="view-panel" id="panel-email-mod">
+                <div class="subject-block-heading" style="margin-top:0; background:var(--amber-bg); color:var(--amber-alert);">📧 Modify Verified Email Account</div>
+                <div class="form-group"><label>New Target Email Address Route</label><input type="email" class="form-control" id="newEmailInput" placeholder="newname@gmail.com" style="background:#fff; color:#000; border-color:#cbd5e1;"></div>
+                <button class="submit-trigger" style="background-color:var(--amber-alert);" onclick="handleEmailModificationRequest()">Submit Change Request</button>
+            </div>
+
+            <div class="view-panel" id="panel-admin">
+                <div class="subject-block-heading" style="margin-top:0; background:#fef2f2; color:var(--error)" id="admin-desk-title">🛡️ Level Rep Approval Control</div>
+                <p style="font-size:12px; color:var(--text-muted); margin:0 0 14px 0;">Review sandboxed student proposals mapped strictly to your class jurisdiction.</p>
+                <div id="admin-queue-target">
+                    <div class="queue-card" id="staged-queue-card" style="display:none;">
+                        <h4 style="margin:0 0 4px 0; font-size:13px; color:var(--text-dark);" id="queue-item-title">BIO 202 - Student Summary Sheet.pdf</h4>
+                        <div class="meta-preview-box">
+                            <strong>Type:</strong> <span id="queue-meta-type">Lecture Notes</span><br>
+                            <strong>Semester Target:</strong> <span id="queue-meta-semester">2nd Semester</span><br>
+                            <strong>Context:</strong> <span id="queue-meta-notes">Missing sheets attached</span>
+                        </div>
+                        <div class="btn-row">
+                            <button class="action-btn" style="background:var(--primary); color:white; border:none;" onclick="executeAdminApproval()">Approve Release</button>
+                            <button class="action-btn" style="background:var(--error-light); color:var(--error); border:none;" onclick="executeAdminRejection()">Purge & Delete</button>
+                        </div>
+                    </div>
+                    <div id="queue-empty-message" style="text-align:center; padding:40px; color:var(--text-muted); font-size:12px;">
+                        🎉 All clean! No pending items inside your Level Verification Queue.
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="bottom-nav" id="mainFooter">
+            <button class="nav-tab active" id="tab-repo" onclick="toggleMainLayoutViewport('repo')">
+                <span style="font-size:16px; margin-bottom:2px;">📖</span><span>Workspace</span>
+            </button>
+            <button class="nav-tab" id="tab-upload" onclick="toggleMainLayoutViewport('upload')">
+                <span style="font-size:16px; margin-bottom:2px;">📤</span><span>Propose</span>
+            </button>
+            <button class="nav-tab" id="tab-admin" onclick="toggleMainLayoutViewport('admin')" style="display:none; border-left:1px solid var(--border); padding-left:8px;">
+                <span style="font-size:16px; margin-bottom:2px;">🛡️</span><span>Rep Desk</span>
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        const publicRepositoryDatabase = [
+            { code: "BIO 101", name: "Invertebrate Zoology Notes", category: "BIOLOGY", lvl: "100", sem: 1, progress: 80, offline: false },
+            { code: "MLS 201", name: "Introduction to Medical Laboratory Science", category: "MEDICAL LABORATORY SCIENCE", lvl: "200", sem: 1, progress: 45, offline: false },
+            { code: "BIO 221", name: "General Ecology Overview Guide", category: "BIOLOGY", lvl: "200", sem: 1, progress: 100, offline: true },
+            { code: "CHM 212", name: "Basic Organic Chemistry Manuals", category: "CHEMISTRY", lvl: "200", sem: 2, progress: 0, offline: false }
+        ];
+
+        let proposalStagingMemoryCache = null;
+        let activeLevelSelection = "200";
+        let activeSemesterSelection = 1;
+        let currentAuthWorkflowState = "login"; 
+        let assignedClassRepJurisdictionScope = "200";
+        let currentActiveViewingCourseCode = "";
+
+        function displayNotificationToast(targetContainerId, styleType, contextText) {
+            const toastNode = document.getElementById(targetContainerId);
+            if(!toastNode) return;
+            toastNode.className = "status-notification-toast " + styleType;
+            toastNode.innerText = contextText;
+            toastNode.style.display = "block";
+            setTimeout(() => { toastNode.style.display = "none"; }, 4000);
+        }
+
+        // Toggles layouts views between Sign In or Sign Up inside Screenshot Architecture Spec Bounds
+        function toggleAuthFormMode(targetModeKey) {
+            currentAuthWorkflowState = targetModeKey;
+            
+            document.getElementById('btn-switch-login').classList.toggle('active', targetModeKey === 'login');
+            document.getElementById('btn-switch-signup').classList.toggle('active', targetModeKey === 'signup');
+            
+            document.getElementById('group-signup-name').style.display = (targetModeKey === 'signup') ? 'block' : 'none';
+            document.getElementById('authMainSubmitBtn').innerText = (targetModeKey === 'signup') ? "Create Verified Account" : "Authenticate Session Link";
+            document.getElementById('auth-subtitle').innerText = (targetModeKey === 'signup') ? "Register Account Verification Pipeline" : "Access Central Academic Repository";
+        }
+
+        function handleRoleSelectionChange() {
+            const currentSelectedRole = document.getElementById('authRole').value;
+            document.getElementById('repLevelContainer').style.display = (currentSelectedRole === 'rep') ? 'block' : 'none';
+        }
+
+        function executeSystemLoginRoute() {
+            const mail = document.getElementById('authEmail').value;
+            const nameVal = document.getElementById('authName').value || "Israel Oluwagbogo";
+            const currentSelectedRole = document.getElementById('authRole').value;
+            
+            if(!mail.includes("@") || mail.length < 5) { 
+                displayNotificationToast('auth-status-toast', 'error', '❌ Authentication Failure: Input a valid personal email.'); 
+                return; 
+            }
+
+            document.getElementById('drawer-user-title').innerText = nameVal;
+            document.getElementById('profileNameTarget').value = nameVal;
+            document.getElementById('profileEmailTarget').value = mail;
+
+            document.getElementById('auth-gate').style.display = 'none';
+            document.getElementById('mainHeader').style.display = 'block';
+            document.getElementById('mainBody').style.display = 'block';
+            document.getElementById('mainFooter').style.display = 'flex';
+
+            if(currentSelectedRole === 'rep') {
+                assignedClassRepJurisdictionScope = document.getElementById('authRepLevel').value;
+                document.getElementById('tab-admin').style.display = 'flex';
+                document.getElementById('app-title-banner').innerText = assignedClassRepJurisdictionScope + "L Rep Core";
+                document.getElementById('admin-desk-title').innerText = `🛡️ ${assignedClassRepJurisdictionScope}L Rep Desk`;
+                document.getElementById('drawer-user-meta').innerText = `${assignedClassRepJurisdictionScope}L Class Representative`;
+                document.getElementById('levelState').value = assignedClassRepJurisdictionScope;
+            } else {
+                document.getElementById('tab-admin').style.display = 'none';
+                document.getElementById('app-title-banner').innerText = "NIMELSSA Hub";
+                document.getElementById('drawer-user-meta').innerText = "Student • Active Member";
+                document.getElementById('levelState').value = "200";
+            }
+            toggleMainLayoutViewport('repo');
+        }
+
+        function handleAuthSubmissionAction() {
+            if(currentAuthWorkflowState === 'signup') {
+                displayNotificationToast('auth-status-toast', 'success', '✉️ Verification Challenge Routed: Account validation token sent successfully to your active inbox.');
+                toggleAuthFormMode('login');
+            } else { executeSystemLoginRoute(); }
+        }
+
+        // TEXT SELECTION LOOKUPS
+        function evaluateTextSelectionHighlight() {
+            const selectionInstance = window.getSelection();
+            const highlightedTextString = selectionInstance.toString().trim();
+            const lookupBar = document.getElementById('selection-lookup-bar');
+            const targetSpan = document.getElementById('context-link-target');
+
+            if(highlightedTextString.length > 1) {
+                let truncatedLabel = highlightedTextString.length > 15 ? highlightedTextString.substring(0, 12) + "..." : highlightedTextString;
+                lookupBar.style.display = "flex";
+                targetSpan.innerHTML = `<a href="https://www.google.com/search?q=${encodeURIComponent(highlightedTextString)}" target="_blank" class="context-search-link">Search "${truncatedLabel}"</a>`;
+            } else {
+                lookupBar.style.display = "none";
+            }
+        }
+
+        function openInAppDocViewer(courseCode, fileLabel) {
+            currentActiveViewingCourseCode = courseCode;
+            document.getElementById('viewer-doc-title').innerText = `${courseCode} - ${fileLabel}`;
+            document.getElementById('viewer-canvas-code').innerText = courseCode;
+            
+            const matchedObj = publicRepositoryDatabase.find(x => x.code === courseCode);
+            const offlineBtn = document.getElementById('viewer-offline-btn');
+            
+            if(matchedObj && matchedObj.offline) {
+                offlineBtn.innerText = "✓ Available Offline";
+                offlineBtn.style.backgroundColor = "var(--success)";
+            } else {
+                offlineBtn.innerText = "📥 Save Offline";
+                offlineBtn.style.backgroundColor = "var(--accent-blue)";
+            }
+            document.getElementById('selection-lookup-bar').style.display = "none";
+            document.getElementById('native-viewer').style.display = 'flex';
+        }
+        function closeInAppDocViewer() { document.getElementById('native-viewer').style.display = 'none'; }
+
+        function executeOfflineCacheToggle() {
+            const matchedObj = publicRepositoryDatabase.find(x => x.code === currentActiveViewingCourseCode);
+            const offlineBtn = document.getElementById('viewer-offline-btn');
+            if(matchedObj) {
+                if(!matchedObj.offline) {
+                    offlineBtn.innerText = "⏳ Caching files...";
+                    setTimeout(() => {
+                        matchedObj.offline = true;
+                        offlineBtn.innerText = "✓ Available Offline";
+                        offlineBtn.style.backgroundColor = "var(--success)";
+                        displayNotificationToast('main-status-toast', 'success', `💾 Cached: ${matchedObj.code} can now be studied offline entirely.`);
+                        renderWorkspaceTree(); 
+                    }, 1000);
+                } else {
+                    matchedObj.offline = false;
+                    offlineBtn.innerText = "📥 Save Offline";
+                    offlineBtn.style.backgroundColor = "var(--accent-blue)";
+                    displayNotificationToast('main-status-toast', 'info', `Removed local file storage caching references.`);
+                    renderWorkspaceTree();
+                }
+            }
+        }
+
+        // SWIPE INTERACTION CONSOLES OVERLAY DRAWER
+        function openNavigationDrawer() {
+            const overlay = document.getElementById('drawer-zone');
+            overlay.style.display = 'block';
+            setTimeout(() => { overlay.style.opacity = '1'; document.querySelector('.nav-drawer').style.transform = 'translateX(0)'; }, 10);
+        }
+        function closeNavigationDrawer() {
+            const overlay = document.getElementById('drawer-zone');
+            document.querySelector('.nav-drawer').style.transform = 'translateX(-100%)';
+            overlay.style.opacity = '0';
+            setTimeout(() => { overlay.style.display = 'none'; }, 250);
+        }
+        function triggerDrawerNavRoute(targetPanelKey) { closeNavigationDrawer(); toggleMainLayoutViewport(targetPanelKey); }
+
+        function handleEmailModificationRequest() {
+            const newMail = document.getElementById('newEmailInput').value;
+            if(!newMail.includes("@")) { alert("Please input an accurate, valid configuration route address."); return; }
+            displayNotificationToast('main-status-toast', 'success', `✉️ Security Validation Dispatched: Access authorization token link sent to ${newMail}.`);
+            document.getElementById('newEmailInput').value = "";
+            toggleMainLayoutViewport('repo');
+        }
+
+        function executeSystemLogOut() {
+            closeNavigationDrawer();
+            document.getElementById('auth-gate').style.display = 'flex';
+            document.getElementById('mainHeader').style.display = 'none';
+            document.getElementById('mainBody').style.display = 'none';
+            document.getElementById('mainFooter').style.display = 'none';
+            toggleAuthFormMode('login');
+        }
+
+        function toggleMainLayoutViewport(panelKey) {
+            const panels = ['repo', 'upload', 'cbt', 'profile', 'email-mod', 'admin'];
+            panels.forEach(k => { const node = document.getElementById('panel-' + k); if(node) node.classList.toggle('active', k === panelKey); });
+            const tabs = ['repo', 'upload', 'admin'];
+            tabs.forEach(t => { const node = document.getElementById('tab-' + t); if(node) node.classList.toggle('active', t === panelKey); });
+            document.getElementById('toggleStrip').style.visibility = (panelKey === 'repo') ? 'visible' : 'hidden';
+            if(panelKey === 'admin') { evaluateQueueVisibilityForRep(); }
+        }
+
+        function switchUploadChannel(modeKey) {
+            activeSubmissionChannelMode = modeKey;
+            document.getElementById('mode-link').classList.toggle('active', modeKey === 'link');
+            document.getElementById('mode-file').classList.toggle('active', modeKey === 'file');
+            document.getElementById('input-container-link').style.display = (modeKey === 'link') ? 'block' : 'none';
+            document.getElementById('input-container-file').style.display = (modeKey === 'file') ? 'block' : 'none';
+        }
+
+        function shiftSemesterScope(semNum) {
+            activeSemesterSelection = semNum;
+            document.getElementById('sem1').classList.toggle('active', semNum === 1);
+            document.getElementById('sem2').classList.toggle('active', semNum === 2);
+            renderWorkspaceTree();
+        }
+
+        function renderWorkspaceTree() {
+            const displayViewport = document.getElementById('hierarchy-render-target');
+            displayViewport.innerHTML = "";
+            activeLevelSelection = document.getElementById('levelState').value;
+
+            const filteredSet = publicRepositoryDatabase.filter(item => item.lvl === activeLevelSelection && item.sem === activeSemesterSelection);
+
+            if(filteredSet.length === 0) {
+                displayViewport.innerHTML = `<div style="text-align:center; padding:50px 20px; color:var(--text-muted); font-size:12px;">🗄️<br><p style="margin-top:8px;">No approved library links catalogued here yet.</p></div>`;
+                return;
+            }
+
+            const uniqueDisciplinesHeadings = [...new Set(filteredSet.map(item => item.category))];
+
+            uniqueDisciplinesHeadings.forEach((subjectKey) => {
+                displayViewport.innerHTML += `<div class="subject-block-heading">📁 ${subjectKey}</div>`;
+                const targetedCategoryGroup = filteredSet.filter(item => item.category === subjectKey);
+
+                targetedCategoryGroup.forEach((course) => {
+                    const strokeDashoffsetValue = 113 - (113 * (course.progress / 100));
+                    const storageBadgeMarkerHTML = course.offline ? `<span style="font-size:9px; background-color:var(--success-light); color:var(--success); padding:2px 6px; border-radius:4px; font-weight:700;">💾 Offline Vault Active</span>` : `<span style="font-size:9px; background-color:var(--border); color:var(--text-muted); padding:2px 6px; border-radius:4px; font-weight:500;">🌐 Stream Link Mode</span>`;
+
+                    displayViewport.innerHTML += `
+                        <div class="course-card">
+                            <div class="card-header-row">
+                                <div>
+                                    <div style="font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:2px;">${course.code}</div>
+                                    <h4 class="course-title" style="margin-bottom:6px;">${course.name}</h4>
+                                    ${storageBadgeMarkerHTML}
+                                </div>
+                                <div class="radial-progress-container">
+                                    <svg class="radial-svg">
+                                        <circle class="radial-bg-circle" cx="22" cy="22" r="18"></circle>
+                                        <circle class="radial-fill-circle" cx="22" cy="22" r="18" style="stroke-dashoffset: ${strokeDashoffsetValue};"></circle>
+                                    </svg>
+                                    <div class="radial-percentage-text">${course.progress}%</div>
+                                </div>
+                            </div>
+                            <div class="btn-row" style="margin-top:12px;">
+                                <button class="action-btn" onclick="openInAppDocViewer('${course.code}', 'Official Class Lecture Slide Notes')">📖 Study Notes</button>
+                                <button class="action-btn" style="border-color:#cbd5e1;" onclick="openInAppDocViewer('${course.code}', 'Verified Exam Paper PQs')">📝 Past Questions</button>
+                            </div>
+                        </div>`;
+                });
+            });
+        }
+
+        function publishProposalToPendingVault() {
+            const targetedCode = document.getElementById('propCourse').value.toUpperCase() || "UNCODED";
+            const typeValue = document.getElementById('propType').value;
+            const chosenSemester = parseInt(document.getElementById('propSemester').value);
+            const contextNotes = document.getElementById('propNotes').value || "No context.";
+
+            const firstDigitCode = targetedCode.match(/\d/);
+            const levelMapValue = firstDigitCode ? firstDigitCode[0] + "00" : "200";
+            
+            let determinedCategory = "MEDICAL LABORATORY SCIENCE";
+            if(targetedCode.includes("BIO")) determinedCategory = "BIOLOGY";
+            if(targetedCode.includes("CHM")) determinedCategory = "CHEMISTRY";
+
+            proposalStagingMemoryCache = { code: targetedCode, name: targetedCode + " - Reference Material", category: determinedCategory, lvl: levelMapValue, sem: chosenSemester, type: typeValue, notes: contextNotes };
+            displayNotificationToast('main-status-toast', 'success', `🎉 Submitted! Asset pushed to the hidden ${levelMapValue}L class review vault.`);
+
+            document.getElementById('queue-item-title').innerText = proposalStagingMemoryCache.name;
+            document.getElementById('queue-meta-type').innerText = proposalStagingMemoryCache.type;
+            document.getElementById('queue-meta-semester').innerText = chosenSemester === 1 ? "1st Semester" : "2nd Semester";
+            document.getElementById('queue-meta-notes').innerText = proposalStagingMemoryCache.notes;
+            document.getElementById('staged-queue-card').style.display = 'block';
+
+            document.getElementById('propCourse').value = ""; document.getElementById('propNotes').value = "";
+
+            if(document.getElementById('tab-admin').style.display === 'flex') { toggleMainLayoutViewport('admin'); } else { toggleMainLayoutViewport('repo'); }
+        }
+
+        function evaluateQueueVisibilityForRep() {
+            const queueCard = document.getElementById('staged-queue-card');
+            const emptyMessage = document.getElementById('queue-empty-message');
+            if(proposalStagingMemoryCache && proposalStagingMemoryCache.lvl === assignedClassRepJurisdictionScope) { queueCard.style.display = 'block'; emptyMessage.style.display = 'none'; } else { queueCard.style.display = 'none'; emptyMessage.style.display = 'block'; }
+        }
+
+        function executeAdminApproval() {
+            publicRepositoryDatabase.push({ code: proposalStagingMemoryCache.code, name: proposalStagingMemoryCache.name.split(" - ")[1], category: proposalStagingMemoryCache.category, lvl: proposalStagingMemoryCache.lvl, sem: proposalStagingMemoryCache.sem, progress: 0, offline: false });
+            proposalStagingMemoryCache = null; evaluateQueueVisibilityForRep();
+            displayNotificationToast('main-status-toast', 'success', '🚀 Published! File released to public library viewports.');
+            document.getElementById('levelState').value = assignedClassRepJurisdictionScope; activeLevelSelection = assignedClassRepJurisdictionScope; shiftSemesterScope(activeSemesterSelection); toggleMainLayoutViewport('repo');
+        }
+        function executeAdminRejection() { proposalStagingMemoryCache = null; evaluateQueueVisibilityForRep(); displayNotificationToast('main-status-toast', 'info', '🗑️ Staging vector purged.'); toggleMainLayoutViewport('repo'); }
+
+        // ─── DOC VIEWER PAGE NAVIGATION ──────────────────────────────────────────
+        let viewerCurrentPage = 1;
+        const viewerTotalPages = 12;
+        function viewerNavigatePage(direction) {
+            viewerCurrentPage = Math.max(1, Math.min(viewerTotalPages, viewerCurrentPage + direction));
+            document.getElementById('viewer-page-counter').innerText = `Page ${viewerCurrentPage} of ${viewerTotalPages}`;
+            // PRODUCTION: Fetch page content from backend or advance PDF.js pageNum here
+            displayNotificationToast('main-status-toast', 'info', `📄 Loading page ${viewerCurrentPage}...`);
+        }
+
+        // ─── SERVICE WORKER & OFFLINE CACHING ──────────────────────────────────
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then((reg) => {
+                    console.log('[SW] Registered scope:', reg.scope);
+                }).catch((err) => {
+                    console.warn('[SW] Registration failed:', err);
+                });
+            });
+        }
+
+        // ─── INDEXEDDB OFFLINE STORE (for file blob caching) ──────────────────
+        // Option A — IndexedDB (recommended for file blobs):
+        //   Use idb library or raw indexedDB API.
+        //   Flow: openDB('nimelssa-vault', 1) → store.put({ code, blob, cachedAt })
+        //   Retrieve: store.get(courseCode) → URL.createObjectURL(blob)
+        //
+        // Option B — Cache API + Service Worker (above) handles static assets.
+        //
+        // Option C — localStorage (quick but limited to ~5MB, text/JSON only):
+        //   Only suitable for storing metadata, not actual file content.
+    </script>
+</body>
+</html>
