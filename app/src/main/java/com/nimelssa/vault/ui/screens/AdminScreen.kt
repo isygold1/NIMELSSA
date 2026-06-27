@@ -13,9 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -24,7 +22,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -53,17 +50,19 @@ import com.nimelssa.vault.data.UserSession
 @Composable
 fun AdminScreen(
     repLevel: String,
-    pendingCourse: Course?,
-    onApprove: (Course) -> Unit,
-    onReject: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val user by UserSession.state.collectAsState()
     val isAdmin = user.role == UserRole.ADMIN
+    val canManage = isAdmin || user.role == UserRole.REP
     val allCourses by CourseRepository.courses.collectAsState()
 
     var showAddForm by remember { mutableStateOf(false) }
-    var selectedLevel by remember { mutableStateOf(repLevel) }
+
+    // Pending proposals for this rep's level (all, not just first)
+    val allPending = remember { CourseRepository.getPendingCourses() }
+    val pendingForLevel = if (isAdmin) allPending
+                          else allPending.filter { it.level == repLevel }
 
     Column(
         modifier = modifier
@@ -83,67 +82,68 @@ fun AdminScreen(
 
         Text(
             text = if (isAdmin) "Manage all courses and approve proposals across all levels."
-                   else "Review proposals mapped strictly to your class level.",
+                   else "Review proposals and manage courses for your level.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Pending proposals ──
-        val pendingForThisLevel = if (isAdmin) pendingCourse
-                                  else if (pendingCourse?.level == repLevel) pendingCourse
-                                  else null
+        // ── All pending proposals ──
+        if (pendingForLevel.isNotEmpty()) {
+            Text(
+                text = "⏳ Pending Proposals (${pendingForLevel.size})",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFFBBF24)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
 
-        if (pendingForThisLevel != null) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, Color(0xFFF59E0B)),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1917))
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "⏳ Pending Approval",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFBBF24)
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "${pendingForThisLevel.code} — ${pendingForThisLevel.name}",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "Category: ${pendingForThisLevel.category} • ${pendingForThisLevel.displaySemester}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF94A3B8)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Button(
-                            onClick = { onApprove(pendingForThisLevel) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
-                        ) { Text("✅ Approve", fontWeight = FontWeight.Bold) }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = onReject,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
-                        ) { Text("❌ Reject", fontWeight = FontWeight.Bold) }
+            pendingForLevel.forEach { pending ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1917))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "${pending.code} — ${pending.name}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Category: ${pending.category} • ${pending.displaySemester}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF94A3B8)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Button(
+                                onClick = { CourseRepository.approveCourse(pending.code) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
+                            ) { Text("✅ Approve", fontWeight = FontWeight.Bold) }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = { CourseRepository.rejectCourse(pending.code) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                            ) { Text("❌ Reject", fontWeight = FontWeight.Bold) }
+                        }
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
         }
 
-        // ── Add New Course (admin only) ──
-        if (isAdmin) {
+        // ── Add New Course (admin & reps) ──
+        if (canManage) {
             Button(
                 onClick = { showAddForm = !showAddForm },
                 modifier = Modifier.fillMaxWidth(),
@@ -159,7 +159,11 @@ fun AdminScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             if (showAddForm) {
-                AddCourseForm(onAdded = { showAddForm = false })
+                AddCourseForm(
+                    initialLevel = if (isAdmin) "100" else repLevel,
+                    lockLevel = !isAdmin, // reps can only add to their level
+                    onAdded = { showAddForm = false }
+                )
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
@@ -178,14 +182,17 @@ fun AdminScreen(
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(displayCourses) { course ->
-                CourseManageRow(course = course, isAdmin = isAdmin)
+                CourseManageRow(
+                    course = course,
+                    canDelete = isAdmin || course.level == repLevel
+                )
             }
         }
     }
 }
 
 @Composable
-private fun CourseManageRow(course: Course, isAdmin: Boolean) {
+private fun CourseManageRow(course: Course, canDelete: Boolean) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -215,7 +222,7 @@ private fun CourseManageRow(course: Course, isAdmin: Boolean) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (isAdmin) {
+            if (canDelete) {
                 Text(
                     text = "🗑️",
                     modifier = Modifier.clickable { CourseRepository.removeCourse(course.code) }
@@ -227,11 +234,15 @@ private fun CourseManageRow(course: Course, isAdmin: Boolean) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddCourseForm(onAdded: () -> Unit) {
+private fun AddCourseForm(
+    initialLevel: String,
+    lockLevel: Boolean,
+    onAdded: () -> Unit
+) {
     var code by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
-    var level by remember { mutableStateOf("100") }
+    var level by remember { mutableStateOf(initialLevel) }
     var semester by remember { mutableIntStateOf(1) }
     var levelExpanded by remember { mutableStateOf(false) }
 
@@ -278,28 +289,42 @@ private fun AddCourseForm(onAdded: () -> Unit) {
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(modifier = Modifier.fillMaxWidth()) {
-                ExposedDropdownMenuBox(
-                    expanded = levelExpanded,
-                    onExpandedChange = { levelExpanded = it }
-                ) {
+                if (lockLevel) {
+                    // Rep: show level as read-only
                     OutlinedTextField(
                         value = "${level} Level",
                         onValueChange = {},
                         readOnly = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = levelExpanded) },
-                        modifier = Modifier.weight(1f).menuAnchor(),
+                        enabled = false,
+                        modifier = Modifier.weight(1f),
                         singleLine = true,
                         shape = RoundedCornerShape(8.dp)
                     )
-                    ExposedDropdownMenu(
+                } else {
+                    // Admin: pick any level
+                    ExposedDropdownMenuBox(
                         expanded = levelExpanded,
-                        onDismissRequest = { levelExpanded = false }
+                        onExpandedChange = { levelExpanded = it }
                     ) {
-                        listOf("100","200","300","400").forEach { l ->
-                            DropdownMenuItem(
-                                text = { Text("${l} Level") },
-                                onClick = { level = l; levelExpanded = false }
-                            )
+                        OutlinedTextField(
+                            value = "${level} Level",
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = levelExpanded) },
+                            modifier = Modifier.weight(1f).menuAnchor(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = levelExpanded,
+                            onDismissRequest = { levelExpanded = false }
+                        ) {
+                            listOf("100","200","300","400").forEach { l ->
+                                DropdownMenuItem(
+                                    text = { Text("${l} Level") },
+                                    onClick = { level = l; levelExpanded = false }
+                                )
+                            }
                         }
                     }
                 }
