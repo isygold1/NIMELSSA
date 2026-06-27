@@ -1,0 +1,83 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:        # Allow manual trigger from GitHub UI
+    inputs:
+      version:
+        description: 'App version label (e.g., 1.0.1)'
+        required: false
+        default: '1.0.0'
+
+jobs:
+  build:
+    name: Build NIMELSSA Vault APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Install npm dependencies
+        run: npm ci
+
+      - name: ☕ Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+
+      - name: 🤖 Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: ⚡ Initialize Capacitor Android platform
+        run: |
+          npx cap init NIMELSSA vault --webDir . --npmClient npm
+          npx cap add android
+
+      - name: 🔄 Sync web assets to Android project
+        run: npx cap sync android
+
+      - name: 🏗️ Build debug APK with Gradle
+        run: |
+          cd android
+          ./gradlew assembleDebug
+        env:
+          CI: true
+
+      - name: 📤 Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nimelssa-vault-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 🏷️ Create Release (on version tag push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/app/build/outputs/apk/debug/*.apk
+          name: NIMELSSA Vault ${{ github.ref_name }}
+          body: |
+            ## NIMELSSA Vault ${{ github.ref_name }}
+
+            Automated build from commit ${{ github.sha }}.
+
+            ### Download
+            - **APK** (debug): attached below
+
+            ### Changes
+            See the [commit history](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details.
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

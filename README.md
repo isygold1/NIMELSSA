@@ -16,61 +16,101 @@ A private, mobile-first Progressive Web App (PWA) for curating, accessing, and m
 
 ## Tech Stack
 
-| Layer       | Technology                        |
-|-------------|-----------------------------------|
-| Frontend    | Vanilla HTML / CSS / JS (PWA)     |
-| App Shell   | Phone-frame simulation (mobile UI)|
-| Offline     | Service Worker (Cache API)        |
-| Icons       | SVG + PNG multi-resolution        |
-| Hosting     | GitHub Pages / any static server  |
+| Layer           | Technology                              |
+|-----------------|-----------------------------------------|
+| Frontend        | Vanilla HTML / CSS / JS (PWA)           |
+| App Shell       | Phone-frame simulation (mobile UI)      |
+| Native Wrapper  | Capacitor 6 (Android APK)               |
+| Offline         | Service Worker (Cache API)              |
+| Icons           | SVG + PNG multi-resolution              |
+| CI/CD           | GitHub Actions (APK + Pages)            |
+| Hosting         | GitHub Pages / any static server        |
 
 ## Project Structure
 
 ```
 NIMELSSA/
-├── index.html          # Main application entry point
-├── manifest.json       # PWA manifest
-├── sw.js               # Service worker (offline caching)
-├── package.json        # Project metadata
+├── index.html                # Main application entry point
+├── manifest.json             # PWA manifest
+├── sw.js                     # Service worker (offline caching)
+├── capacitor.config.json     # Capacitor native app config
+├── package.json              # Project metadata & build scripts
+├── .github/workflows/
+│   ├── build-apk.yml         # CI: build Android APK on push
+│   └── deploy-pages.yml      # CD: deploy PWA to GitHub Pages
 ├── .gitignore
 ├── README.md
 └── icons/
-    ├── icon.svg        # Scalable vector icon
-    ├── icon-72.png     # 72×72 PNG icon
-    ├── icon-96.png     # 96×96 PNG icon
-    ├── icon-128.png    # 128×128 PNG icon
-    ├── icon-144.png    # 144×144 PNG icon
-    ├── icon-152.png    # 152×152 PNG icon
-    ├── icon-192.png    # 192×192 PNG icon
-    ├── icon-384.png    # 384×384 PNG icon
-    └── icon-512.png    # 512×512 PNG icon
+    ├── icon.svg              # Scalable vector icon
+    ├── icon-72.png           # 72×72 PNG icon
+    ├── icon-96.png           # 96×96 PNG icon
+    ├── icon-128.png          # 128×128 PNG icon
+    ├── icon-144.png          # 144×144 PNG icon
+    ├── icon-152.png          # 152×152 PNG icon
+    ├── icon-192.png          # 192×192 PNG icon
+    ├── icon-384.png          # 384×384 PNG icon
+    └── icon-512.png          # 512×512 PNG icon
 ```
 
-## Getting Started
+## Install as an App
+
+You can install NIMELSSA Vault **two ways**:
+
+### Option 1 — PWA (browser install)
+
+1. Open the deployed app at **GitHub Pages URL** (see repo Settings → Pages)
+2. In Chrome / Edge, tap **"Install"** or **"Add to Home Screen"**
+3. Launches standalone with no browser chrome
+
+### Option 2 — Android APK (native app)
+
+1. Go to the **Actions** tab in this repository
+2. Click the latest **"Build Android APK"** workflow run
+3. Scroll down to **Artifacts** and download `nimelssa-vault-debug-apk.zip`
+4. Extract and side-load the `.apk` on your Android device
+5. Install and launch as a native app
+
+> **Tip:** On first run, Android may ask you to allow "Install from unknown sources" — this is normal for debug APKs.
+
+## Build Locally
 
 ### Prerequisites
 
-- Any modern browser (Chrome, Firefox, Safari, Edge)
-- A static HTTP server (optional — the app works opened directly as a file)
+- Node.js 20+
+- Android Studio (for local APK builds)
+- Java 17+
 
-### Run Locally
+### Commands
 
 ```bash
-# Clone the repository
+# 1. Clone
 git clone https://github.com/isygold/NIMELSSA.git
-
-# Serve with any static server (e.g., Python)
 cd NIMELSSA
-python3 -m http.server 8000
 
-# Open http://localhost:8000 in your browser
+# 2. Install dependencies
+npm install
+
+# 3. Init and build APK
+npx cap init NIMELSSA vault --webDir . --npmClient npm
+npx cap add android
+npx cap sync android
+cd android && ./gradlew assembleDebug
+
+# APK located at: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Install as PWA
+## GitHub Actions Workflows
 
-1. Open the app in Chrome / Edge on Android or Desktop
-2. Tap the **"Install"** or **"Add to Home Screen"** prompt
-3. The app launches in standalone mode with no browser chrome
+| Workflow | Trigger | Output |
+|----------|---------|--------|
+| `build-apk.yml` | Push to `main`, PR, or manual dispatch | Debug APK artifact (+ GitHub Release on tag push) |
+| `deploy-pages.yml` | Push to `main` or manual dispatch | Live PWA at GitHub Pages |
+
+To trigger a **release build** with an APK attachment, push a tag:
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
 
 ## Author
 
