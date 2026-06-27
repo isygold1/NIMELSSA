@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "138189661996",
+    "project_id": "nimelssa-vault",
+    "storage_bucket": "nimelssa-vault.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:138189661996:android:09c163da57393b49e36e89",
+        "android_client_info": {
+          "package_name": "com.nimelssa.vault"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyALIsMT5RzeMjFdetX1XpPJjEatRgJDLwU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

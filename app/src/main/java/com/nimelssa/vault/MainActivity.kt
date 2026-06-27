@@ -3,17 +3,23 @@ package com.nimelssa.vault
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -43,6 +49,8 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Check for existing Firebase Auth session on startup
+        UserSession.checkExistingSession()
         setContent {
             NIMELSSATheme {
                 MainApp()
@@ -69,29 +77,31 @@ fun MainApp() {
     val userState by UserSession.state.collectAsState()
     val navController = rememberNavController()
 
+    // ── Loading screen (initial session check in progress) ──
+    if (!userState.isLoggedIn && userState.isLoading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+        return
+    }
+
+    // ── Auth screen (not logged in) ──
     if (!userState.isLoggedIn) {
-        // ── Auth screen (fullscreen, no drawer) ──
         AuthScreen(
             authMode = userState.authMode,
+            isLoading = userState.isLoading,
+            errorMessage = userState.errorMessage,
             onToggleMode = { UserSession.setAuthMode(it) },
-            onLogin = { name, email, role, repLevel ->
-                UserSession.login(name, email, role, repLevel)
-                navController.navigate(Routes.WORKSPACE) {
-                    popUpTo(Routes.AUTH) { inclusive = true }
-                }
+            onLogin = { email, password ->
+                UserSession.signIn(email, password)
             },
-            onSignup = {
-                // For demo: signup acts as login with defaults
-                UserSession.login(
-                    name = "Israel Oluwagbogo",
-                    email = "user@nimelssa.edu.ng",
-                    role = UserRole.REP,
-                    repLevel = "200"
-                )
-                navController.navigate(Routes.WORKSPACE) {
-                    popUpTo(Routes.AUTH) { inclusive = true }
-                }
-            }
+            onSignup = { name, email, password, role, repLevel ->
+                UserSession.signUp(name, email, password, role, repLevel)
+            },
+            onClearError = { UserSession.clearError() }
         )
         return
     }
@@ -102,16 +112,12 @@ fun MainApp() {
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
 
-    // Determine which bottom nav tab is selected
     val selectedTab = when {
         currentRoute == Routes.WORKSPACE -> BottomNavTab.WORKSPACE
         currentRoute == Routes.PROPOSE -> BottomNavTab.PROPOSE
         currentRoute == Routes.ADMIN -> BottomNavTab.ADMIN
         else -> BottomNavTab.WORKSPACE
     }
-
-    // Keep track of a course to view (passed from WorkspaceScreen via nav)
-    var courseToView: Course? = null
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -133,10 +139,7 @@ fun MainApp() {
                     },
                     onLogout = {
                         scope.launch { drawerState.close() }
-                        UserSession.logout()
-                        navController.navigate(Routes.AUTH) {
-                            popUpTo(0) { inclusive = true }
-                        }
+                        UserSession.signOut()
                     }
                 )
             }
