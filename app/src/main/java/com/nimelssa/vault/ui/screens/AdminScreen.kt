@@ -430,7 +430,9 @@ private suspend fun scanProposal(proposal: Proposal) {
     val unmatchedFiles = mutableListOf<com.nimelssa.vault.data.AiUnmatchedFile>()
 
     for (file in result.files) {
-        val parseResult = FilenameParser.parse(file.name)
+        // Use path-aware parsing — folder names (like "200 level / MLS 201")
+        // give the AI much more context than filenames alone
+        val parseResult = FilenameParser.parseWithPath(file.name, file.path)
 
         if (parseResult.courseCode != null && parseResult.confidence != FilenameParser.Confidence.NONE) {
             val resourceLabel = when (parseResult.resourceType) {
@@ -440,10 +442,13 @@ private suspend fun scanProposal(proposal: Proposal) {
                 else -> "Other"
             }
 
-            // Look up the course in the repository for its full name/level/semester
+            // Look up the course in the repository for its full name
             val existingCourse = CourseRepository.findCourse(parseResult.courseCode)
             val courseName = existingCourse?.name ?: parseResult.courseCode
-            val level = existingCourse?.level ?: inferLevelFromCode(parseResult.courseCode)
+            // Use level from path first, then from existing course, then infer from code
+            val level = parseResult.level
+                ?: existingCourse?.level
+                ?: inferLevelFromCode(parseResult.courseCode)
             val semester = parseResult.semester ?: existingCourse?.semester ?: 1
 
             matchedItems.add(
@@ -462,7 +467,7 @@ private suspend fun scanProposal(proposal: Proposal) {
             unmatchedFiles.add(
                 com.nimelssa.vault.data.AiUnmatchedFile(
                     fileName = file.name,
-                    reason = parseResult.reason,
+                    reason = parseResult.reason.ifBlank { "Could not identify course from filename or folder path" },
                     fileId = file.id
                 )
             )

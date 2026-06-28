@@ -61,12 +61,13 @@ object FilenameParser {
     private val SEMESTER_2_KEYWORDS = listOf("sem2", "semester2", "secondsem", "2ndsem")
 
     /**
-     * Result of parsing a single filename.
+     * Result of parsing a single filename (with optional path context).
      */
     data class ParseResult(
         val courseCode: String?,
         val resourceType: String?,    // "LN", "PQ", "TB", "OT"
-        val semester: Int?,           // 1 or 2, null if unknown
+        val level: String? = null,    // "100", "200", etc. (inferred from path or code)
+        val semester: Int? = null,    // 1 or 2, null if unknown
         val confidence: Confidence,
         val reason: String = ""
     )
@@ -74,53 +75,174 @@ object FilenameParser {
     enum class Confidence { HIGH, MEDIUM, LOW, NONE }
 
     /**
-     * Parse a single filename and return the best guess.
+     * Parse a single filename (no path context).
      */
     fun parse(fileName: String): ParseResult {
-        val name = fileName.trim()
+        return parseWithPath(fileName, "")
+    }
 
-        // 1. Try strict regex first
+    /**
+     * Parse a filename **with folder path context**.
+     *
+     * The path contains the full folder hierarchy e.g.:
+     *   "NIMELSSA Academic Hub / 200 level / MLS 201"
+     *
+     * This lets the AI extract:
+     *   - Level from "200 level" folder name
+     *   - Course code from "MLS 201" folder name
+     *   - Resource type from "Lecture Notes" folder name
+     *
+     * Strategy (in order of precedence):
+     *   1. Path level + path course code + filename type   (HIGH)
+     *   2. Path level + filename course code + type        (MEDIUM)
+     *   3. Filename only                                  (LOW / NONE)
+     */
+    fun parseWithPath(fileName: String, path: String): ParseResult {
+        val name = fileName.trim()
+        val pathLower = path.lowercase(Locale.ROOT)
+
+        // ── Extract level from path ──
+        // Looks for "100 level", "200L", "300 Level" in the path
+        val levelFromPath = extractLevelFromPath(path)
+
+        // ── Extract resource type from path ──
+        // Looks for "Lecture Notes", "Past Questions", "Textbooks" in path segments
+        val typeFromPath = extractTypeFromPath(path)
+
+        // ── Extract course code from path ──
+        // Looks for "MLS 201", "CSC 101" in path segments
+        val codeFromPath = extractCodeFromPath(path)
+
+        // ── Now try filename parsing ──
+        val strictResult = tryStrictMatch(name)
+        if (strictResult != null) {
+            // Strict filename match trumps path
+            val level = levelFromPath ?: inferLevelFromCode(strictResult.code)
+            return ParseResult(
+                courseCode = strictResult.code,
+                resourceType = typeFromPath ?: strictResult.type,
+                level = level,
+                semester = inferSemester(name, strictResult.code),
+                confidence = Confidence.HIGH,
+                reason = "Strict filename: ${strictResult.code}, type=${strictResult.type}" +
+                        (if (levelFromPath != null) ", level from path" else "")
+            )
+        }
+
+        // Try loose filename match
+        val looseResult = tryLooseMatch(name)
+        if (looseResult != null) {
+            val level = levelFromPath ?: inferLevelFromCode(looseResult.code)
+            return ParseResult(
+                courseCode = looseResult.code,
+                resourceType = typeFromPath ?: looseResult.type,
+                level = level,
+                semester = inferSemester(name, looseResult.code),
+                confidence = if (levelFromPath != null) Confidence.MEDIUM else looseResult.confidence,
+                reason = "Loose filename: ${looseResult.code}" +
+                        (if (typeFromPath != null) ", type from path" else "") +
+                        (if (levelFromPath != null) ", level from path" else "")
+            )
+        }
+
+        // Try path-only match (folder named after course)
+        if (codeFromPath != null) {
+            return ParseResult(
+                courseCode = codeFromPath,
+                resourceType = typeFromPath ?: "OT",
+                level = levelFromPath ?: inferLevelFromCode(codeFromPath),
+                semester = inferSemester(name, codeFromPath),
+                confidence = if (levelFromPath != null) Confidence.MEDIUM else Confidence.LOW,
+                reason = "Course code from folder name: $codeFromPath"
+            )
+        }
+
+        // Nothing found
+        return ParseResult(
+            courseCode = null,
+            resourceType = typeFromPath,
+            level = levelFromPath,
+            semester = null,
+            confidence = Confidence.NONE,
+            reason = "Could not extract course code from filename or path"
+        )
+    }
+
+    /**
+     * Try the strict CourseCode_Type.ext pattern.
+     */
+    private fun tryStrictMatch(name: String): StrictMatch? {
         STRICT_REGEX.matchEntire(name)?.let { m ->
             val prefix = m.groupValues[1].uppercase()
             val number = m.groupValues[2]
             val type = m.groupValues[3].uppercase()
-            val code = "$prefix$number"
-            return ParseResult(
-                courseCode = code,
-                resourceType = type,
-                semester = inferSemester(name, code),
-                confidence = Confidence.HIGH,
-                reason = "Strict regex match: $code, type=$type"
-            )
+            return StrictMatch(code = "$prefix$number", type = type)
         }
-
-        // 2. Try loose regex with prefix lookup
-        val codeMatch = LOOSE_CODE_REGEX.find(name)
-        if (codeMatch != null) {
-            val prefix = codeMatch.groupValues[1].uppercase()
-            val number = codeMatch.groupValues[2]
-            val mappedPrefix = KNOWN_PREFIXES[prefix] ?: prefix
-            val code = "$mappedPrefix$number"
-            val type = inferType(name)
-            val confidence = if (prefix in KNOWN_PREFIXES) Confidence.MEDIUM else Confidence.LOW
-            return ParseResult(
-                courseCode = code,
-                resourceType = type,
-                semester = inferSemester(name, code),
-                confidence = confidence,
-                reason = "Fuzzy match: $code, type=$type, confidence=$confidence"
-            )
-        }
-
-        // 3. Nothing found
-        return ParseResult(
-            courseCode = null,
-            resourceType = null,
-            semester = null,
-            confidence = Confidence.NONE,
-            reason = "Could not extract course code from filename"
-        )
+        return null
     }
+
+    /**
+     * Try the loose fuzzy match.
+     */
+    private fun tryLooseMatch(name: String): LooseMatch? {
+        val codeMatch = LOOSE_CODE_REGEX.find(name) ?: return null
+        val prefix = codeMatch.groupValues[1].uppercase()
+        val number = codeMatch.groupValues[2]
+        val mappedPrefix = KNOWN_PREFIXES[prefix] ?: prefix
+        val code = "$mappedPrefix$number"
+        val type = inferType(name)
+        val confidence = if (prefix in KNOWN_PREFIXES) Confidence.MEDIUM else Confidence.LOW
+        return LooseMatch(code = code, type = type, confidence = confidence)
+    }
+
+    /**
+     * Extract academic level from a folder path.
+     * Matches "100 level", "200L", "300 Level", "400l" etc.
+     */
+    private fun extractLevelFromPath(path: String): String? {
+        val lower = path.lowercase(Locale.ROOT)
+        val regex = Regex("""(\d{3})\s*(level|l)\b""")
+        return regex.find(lower)?.groupValues?.get(1)?.let { "${it[0]}00" }
+    }
+
+    /**
+     * Extract resource type from folder path segments.
+     * Matches "Lecture Notes", "Past Questions", "Textbooks", etc.
+     */
+    private fun extractTypeFromPath(path: String): String? {
+        val lower = path.lowercase(Locale.ROOT)
+        val segments = lower.split("/")
+        for (seg in segments) {
+            val trimmed = seg.trim()
+            if (trimmed.contains("lecture") || trimmed.contains("note")) return "LN"
+            if (trimmed.contains("past") || trimmed.contains("question") || trimmed.contains("exam")) return "PQ"
+            if (trimmed.contains("textbook") || trimmed.contains("book") || trimmed.contains("reference")) return "TB"
+        }
+        return null
+    }
+
+    /**
+     * Extract a course code from folder path (e.g., "MLS 201" → MLS201).
+     */
+    private fun extractCodeFromPath(path: String): String? {
+        val segments = path.split("/")
+        for (seg in segments) {
+            val trimmed = seg.trim()
+            val match = LOOSE_CODE_REGEX.find(trimmed) ?: continue
+            val prefix = match.groupValues[1].uppercase()
+            val number = match.groupValues[2]
+            val mappedPrefix = KNOWN_PREFIXES[prefix] ?: prefix
+            // Make sure the course code is the MAIN part of this segment
+            // (e.g., "MLS 201" is the folder name)
+            if (trimmed.uppercase().startsWith(prefix)) {
+                return "$mappedPrefix$number"
+            }
+        }
+        return null
+    }
+
+    private data class StrictMatch(val code: String, val type: String)
+    private data class LooseMatch(val code: String, val type: String, val confidence: Confidence)
 
     /**
      * Infer resource type from filename keywords.

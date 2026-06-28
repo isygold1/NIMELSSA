@@ -49,7 +49,9 @@ object DriveScanner {
         val name: String,
         val mimeType: String,
         val webViewLink: String?,
-        val size: Long? = null
+        val size: Long? = null,
+        /** Folder hierarchy this file lives in, e.g. "200 level / MLS 201" */
+        val path: String = ""
     )
 
     /**
@@ -85,7 +87,7 @@ object DriveScanner {
             }
 
             if (meta.isFolder) {
-                val files = listFolderContents(extractedId)
+                val files = walkFolder(extractedId, meta.name)
                 return@withContext ScanResult(
                     isFolder = true,
                     folderName = meta.name,
@@ -100,7 +102,8 @@ object DriveScanner {
                             id = extractedId,
                             name = meta.name,
                             mimeType = meta.mimeType,
-                            webViewLink = meta.webViewLink
+                            webViewLink = meta.webViewLink,
+                            path = meta.name
                         )
                     )
                 )
@@ -150,28 +153,27 @@ object DriveScanner {
     }
 
     /**
-     * List ALL files inside a folder, **recursing into subfolders**.
+     * Walk the folder tree **dynamically** — no hardcoded level limit,
+     * no assumptions about structure. Uses folder NAMES to build a path
+     * for each file, which the [FilenameParser] then uses to extract
+     * level, course code, and resource type.
      *
-     * Drive folders often have nested structures like:
-     *   📁 200 Level/
-     *      📁 Lecture Notes/
-     *         📄 CSC201_OOP.pdf
-     *      📁 Past Questions/
-     *         📄 CSC201_PQ.pdf
-     *
-     * This function walks the entire tree and returns all leaf files.
+     * Example path: "NIMELSSA Hub / 200 level / MLS 201 / histo_note.pdf"
+     *                ↑ root        ↑ level    ↑ course   ↑ file
      */
-    private fun listFolderContents(folderId: String, depth: Int = 0): List<DriveFileInfo> {
-        // Safety: max 5 levels deep to prevent runaway recursion
-        if (depth > 5) return emptyList()
+    private fun walkFolder(
+        folderId: String,
+        currentPath: String,
+        depth: Int = 0
+    ): List<DriveFileInfo> {
+        // Safety cap — prevents runaway on cyclic structures
+        if (depth > 20) return emptyList()
 
         val files = mutableListOf<DriveFileInfo>()
-        val subFolders = mutableListOf<String>()
+        val subFolders = mutableListOf<Pair<String, String>>() // (folderId, folderName)
         var pageToken: String? = null
-        var apiError: String? = null
 
         do {
-            // List ALL children (files AND folders)
             val query = "'$folderId' in parents"
 
             val params = mutableMapOf(
@@ -194,8 +196,7 @@ object DriveScanner {
                 val responseCode = conn.responseCode
                 if (responseCode != 200) {
                     val errorBody = readStream(conn.errorStream ?: conn.inputStream)
-                    apiError = "HTTP $responseCode: ${parseError(errorBody)}"
-                    Log.e(TAG, "listFolderContents($folderId) failed: $apiError")
+                    Log.e(TAG, "walkFolder($folderId) HTTP $responseCode: $errorBody")
                     break
                 }
 
@@ -206,17 +207,19 @@ object DriveScanner {
                     val mimeType = item.optString("mimeType", "")
                     val isFolder = mimeType == "application/vnd.google-apps.folder"
                     val fileId = item.optString("id", "")
+                    val fileName = item.optString("name", "Unnamed")
 
                     if (isFolder) {
-                        subFolders.add(fileId)
+                        subFolders.add(fileId to fileName)
                     } else {
                         files.add(
                             DriveFileInfo(
                                 id = fileId,
-                                name = item.optString("name", "Unnamed"),
+                                name = fileName,
                                 mimeType = mimeType,
                                 webViewLink = item.optString("webViewLink", null),
-                                size = if (item.has("size")) item.optLong("size", 0) else null
+                                size = if (item.has("size")) item.optLong("size", 0) else null,
+                                path = currentPath
                             )
                         )
                     }
@@ -229,10 +232,10 @@ object DriveScanner {
             }
         } while (pageToken != null)
 
-        // If there was an API error at this level, log it but continue
-        // with whatever we did get, plus recursively process subfolders
-        for (subId in subFolders) {
-            files.addAll(listFolderContents(subId, depth + 1))
+        // Recurse into subfolders, building the path: "parent / child"
+        for ((subId, subName) in subFolders) {
+            val childPath = "$currentPath / $subName"
+            files.addAll(walkFolder(subId, childPath, depth + 1))
         }
 
         return files
