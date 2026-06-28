@@ -2,9 +2,9 @@ name: Build NIMELSSA Vault APK
 
 on:
   push:
-    branches: [ main, test ]
+    branches: [ main, test, test2 ]
   pull_request:
-    branches: [ main, test ]
+    branches: [ main, test, test2 ]
   workflow_dispatch:
     inputs:
       version:
