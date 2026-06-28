@@ -27,6 +27,7 @@ object FirestoreCourseSync {
                 val code = doc.id
                 val lectureNotesUrl = doc.getString("lectureNotesUrl") ?: ""
                 val pastQuestionsUrl = doc.getString("pastQuestionsUrl") ?: ""
+                val textbookUrl = doc.getString("textbookUrl") ?: ""
                 val submittedBy = doc.getString("submittedBy") ?: ""
                 val notes = doc.getString("notes") ?: ""
 
@@ -35,6 +36,7 @@ object FirestoreCourseSync {
                     code = code,
                     lectureNotesUrl = lectureNotesUrl,
                     pastQuestionsUrl = pastQuestionsUrl,
+                    textbookUrl = textbookUrl,
                     submittedBy = submittedBy,
                     notes = notes
                 )
@@ -53,6 +55,7 @@ object FirestoreCourseSync {
         code: String,
         lectureNotesUrl: String,
         pastQuestionsUrl: String,
+        textbookUrl: String = "",
         submittedBy: String,
         notes: String
     ) {
@@ -60,6 +63,7 @@ object FirestoreCourseSync {
             val data = mapOf(
                 "lectureNotesUrl" to lectureNotesUrl,
                 "pastQuestionsUrl" to pastQuestionsUrl,
+                "textbookUrl" to textbookUrl,
                 "submittedBy" to submittedBy,
                 "notes" to notes,
                 "lastUpdated" to com.google.firebase.firestore.FieldValue.serverTimestamp()

@@ -36,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,17 +48,33 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.AiMatchedItem
 import com.nimelssa.vault.data.AiPreview
+import com.nimelssa.vault.data.AiUnmatchedFile
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
 import com.nimelssa.vault.data.DriveScanner
 import com.nimelssa.vault.data.DriveScanner.ScanResult
 import com.nimelssa.vault.data.FilenameParser
 import com.nimelssa.vault.data.FirestoreCourseSync
+import com.nimelssa.vault.data.LevelTextbook
+import com.nimelssa.vault.data.LevelTextbookRepository
 import com.nimelssa.vault.data.Proposal
 import com.nimelssa.vault.data.ProposalRepository
 import com.nimelssa.vault.data.UserRole
 import com.nimelssa.vault.data.UserSession
 import kotlinx.coroutines.launch
+
+/**
+ * An admin's manual assignment for an unmatched file.
+ * Converts an AiUnmatchedFile into a resource after the admin picks
+ * type, course code, and level.
+ */
+private data class ManualAssignment(
+    val fileId: String,
+    val fileName: String,
+    val resourceType: String = "TB",   // "LN", "PQ", "TB", "OT"
+    val courseCode: String = "",        // empty allowed for TB
+    val level: String = ""
+)
 
 /**
  * Rep Desk / Admin Console with AI-powered proposal scanning.
@@ -140,9 +157,9 @@ fun AdminScreen(
                         }
                     },
                     onEdit = { /* TODO: inline edit mode */ },
-                    onApprove = {
+                    onApprove = { manualAssignments ->
                         scope.launch {
-                            approveProposal(proposal, user.email)
+                            approveProposal(proposal, user.email, manualAssignments)
                         }
                     },
                     onReject = {
@@ -223,10 +240,11 @@ private fun ProposalCard(
     hasScanned: Boolean,
     onScan: () -> Unit,
     onEdit: () -> Unit,
-    onApprove: () -> Unit,
+    onApprove: (Map<String, ManualAssignment>) -> Unit,
     onReject: () -> Unit
 ) {
     val aiPreview = proposal.aiPreview
+    val manualAssignments = remember { mutableStateMapOf<String, ManualAssignment>() }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -294,14 +312,21 @@ private fun ProposalCard(
 
             // ── AI Preview (after scan) ──
             if (hasScanned && aiPreview != null) {
-                AiPreviewSection(aiPreview = aiPreview)
+                AiPreviewSection(
+                    aiPreview = aiPreview,
+                    manualAssignments = manualAssignments,
+                    onAssignmentChange = { fileId, assignment ->
+                        if (assignment == null) manualAssignments.remove(fileId)
+                        else manualAssignments[fileId] = assignment
+                    }
+                )
 
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // ── Action buttons ──
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Button(
-                        onClick = onApprove,
+                        onClick = { onApprove(manualAssignments.toMap()) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
@@ -318,7 +343,7 @@ private fun ProposalCard(
                 if (aiPreview.scanStatus == "partial") {
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "⚠️ Some files couldn't be matched. Approve only the matched ones above, or reject the proposal.",
+                        text = "⚠️ Some files couldn't be matched. Assign them above or reject.",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color(0xFFFBBF24)
                     )
@@ -329,11 +354,15 @@ private fun ProposalCard(
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  AI PREVIEW SECTION
+//  AI PREVIEW SECTION  (with interactive unmatched file assignment)
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-private fun AiPreviewSection(aiPreview: AiPreview) {
+private fun AiPreviewSection(
+    aiPreview: AiPreview,
+    manualAssignments: Map<String, ManualAssignment>,
+    onAssignmentChange: (String, ManualAssignment?) -> Unit
+) {
     when (aiPreview.scanStatus) {
         "failed" -> {
             Text(
@@ -354,8 +383,9 @@ private fun AiPreviewSection(aiPreview: AiPreview) {
 
             // Summary
             val statusIcon = if (aiPreview.scanStatus == "success") "✅" else "⚠️"
+            val assignedCount = manualAssignments.count { it.value.resourceType.isNotBlank() }
             Text(
-                text = "$statusIcon ${aiPreview.matchedItems.size} resources found from ${aiPreview.totalFilesScanned} files",
+                text = "$statusIcon ${aiPreview.matchedItems.size} matched + ${assignedCount} assigned / ${aiPreview.totalFilesScanned} files",
                 style = MaterialTheme.typography.labelSmall,
                 color = if (aiPreview.scanStatus == "success") Color(0xFF4ADE80) else Color(0xFFFBBF24)
             )
@@ -376,21 +406,28 @@ private fun AiPreviewSection(aiPreview: AiPreview) {
                 )
             }
 
-            // Unmatched files
+            // Unmatched files — interactive assignment cards
             if (aiPreview.unmatchedFiles.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "⚠️ Unmatched (${aiPreview.unmatchedFiles.size}):",
+                    text = "⚠️ Assign Unmatched (${aiPreview.unmatchedFiles.size}):",
                     style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
                     color = Color(0xFFFBBF24)
                 )
+
                 aiPreview.unmatchedFiles.forEach { uf ->
-                    Text(
-                        text = "   ${uf.fileName} — ${uf.reason}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFFF87171),
-                        maxLines = 1
+                    UnmatchedAssignmentCard(
+                        unmatchedFile = uf,
+                        currentAssignment = manualAssignments[uf.fileId],
+                        onAssign = { assignment ->
+                            onAssignmentChange(uf.fileId, assignment)
+                        },
+                        onClear = {
+                            onAssignmentChange(uf.fileId, null)
+                        }
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
             }
         }
@@ -400,6 +437,291 @@ private fun AiPreviewSection(aiPreview: AiPreview) {
                 style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFF94A3B8)
             )
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UNMATCHED ASSIGNMENT CARD
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Interactive card for assigning an unmatched file to a course/textbook.
+ *
+ * Two modes:
+ *   - **Textbook (TB)**: admin picks level; course code is optional.
+ *   - **Other (LN/PQ/OT)**: admin types course code (with suggestions from
+ *     CourseRepository) and picks level.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun UnmatchedAssignmentCard(
+    unmatchedFile: AiUnmatchedFile,
+    currentAssignment: ManualAssignment?,
+    onAssign: (ManualAssignment) -> Unit,
+    onClear: () -> Unit
+) {
+    val allCourses by CourseRepository.courses.collectAsState()
+
+    var resourceType by remember(currentAssignment) {
+        mutableStateOf(currentAssignment?.resourceType ?: "TB")
+    }
+    var courseCode by remember(currentAssignment) {
+        mutableStateOf(currentAssignment?.courseCode ?: "")
+    }
+    var level by remember(currentAssignment) {
+        mutableStateOf(currentAssignment?.level ?: "")
+    }
+    var showCourseSuggestions by remember { mutableStateOf(false) }
+    var levelExpanded by remember { mutableStateOf(false) }
+
+    // Derive suggested courses based on typed code
+    val suggestions = remember(courseCode, allCourses) {
+        if (courseCode.length >= 2) {
+            allCourses.filter { it.code.contains(courseCode, ignoreCase = true) }
+                .map { it.code }
+                .distinct()
+                .take(6)
+        } else emptyList()
+    }
+
+    // Determine if the typed code looks like an existing course
+    val existingCourse = remember(courseCode, allCourses) {
+        allCourses.find { it.code.equals(courseCode, ignoreCase = true) }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(6.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF2D3748)),
+        border = BorderStroke(1.dp, Color(0xFF4A5568))
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            // File name
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "📄 ${unmatchedFile.fileName}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFE2E8F0),
+                    modifier = Modifier.weight(1f)
+                )
+                if (currentAssignment != null) {
+                    Text(
+                        text = if (resourceType == "TB") "📚 TB" else "✓ Assigned",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF4ADE80),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // ── Resource Type selector ──
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                listOf("TB" to "📚 TB", "LN" to "📖 LN", "PQ" to "📝 PQ", "OT" to "📄 OT").forEach { (type, label) ->
+                    val isSelected = resourceType == type
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isSelected) Color.White else Color(0xFF94A3B8),
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        modifier = Modifier
+                            .clickable { resourceType = type }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // ── Course Code field (optional for TB, required for others) ──
+            if (resourceType != "TB") {
+                ExposedDropdownMenuBox(
+                    expanded = showCourseSuggestions && suggestions.isNotEmpty(),
+                    onExpandedChange = { showCourseSuggestions = it }
+                ) {
+                    OutlinedTextField(
+                        value = courseCode,
+                        onValueChange = {
+                            courseCode = it.uppercase()
+                            showCourseSuggestions = it.length >= 2
+                        },
+                        label = { Text("Course Code") },
+                        placeholder = { Text("e.g., MLS 301") },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(6.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = Color(0xFF4A5568),
+                            focusedBorderColor = if (existingCourse != null) Color(0xFF4ADE80) else Color(0xFF6366F1),
+                            unfocusedTextColor = Color.White,
+                            focusedTextColor = Color.White
+                        ),
+                        textStyle = MaterialTheme.typography.bodySmall
+                    )
+
+                    if (suggestions.isNotEmpty()) {
+                        ExposedDropdownMenu(
+                            expanded = showCourseSuggestions,
+                            onDismissRequest = { showCourseSuggestions = false }
+                        ) {
+                            suggestions.forEach { code ->
+                                DropdownMenuItem(
+                                    text = {
+                                        val c = allCourses.find { it.code == code }
+                                        Text(
+                                            "${code}  ${c?.name ?: ""}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.White
+                                        )
+                                    },
+                                    onClick = {
+                                        courseCode = code
+                                        showCourseSuggestions = false
+                                        // Auto-fill level from existing course
+                                        val found = allCourses.find { it.code == code }
+                                        if (found != null && level.isBlank()) {
+                                            level = found.level
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (existingCourse != null) {
+                    Text(
+                        text = "✓ ${existingCourse.name} (${existingCourse.level} Level)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF4ADE80)
+                    )
+                } else if (courseCode.length >= 3) {
+                    Text(
+                        text = "⚠️ New course code — will create entry",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFFBBF24)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+            } else {
+                // TB mode — course code is optional
+                OutlinedTextField(
+                    value = courseCode,
+                    onValueChange = { courseCode = it.uppercase() },
+                    label = { Text("Course Code (optional for textbook)") },
+                    placeholder = { Text("e.g., MLS 301 or leave blank") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(6.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = Color(0xFF4A5568),
+                        focusedBorderColor = Color(0xFF6366F1),
+                        unfocusedTextColor = Color.White,
+                        focusedTextColor = Color.White
+                    ),
+                    textStyle = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // ── Level picker ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Level: ",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF94A3B8)
+                )
+                ExposedDropdownMenuBox(
+                    expanded = levelExpanded,
+                    onExpandedChange = { levelExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = if (level.isNotBlank()) "${level} Level" else "Select",
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = levelExpanded) },
+                        modifier = Modifier.weight(1f).menuAnchor(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(6.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = Color(0xFF4A5568),
+                            focusedBorderColor = Color(0xFF6366F1),
+                            unfocusedTextColor = Color.White,
+                            focusedTextColor = Color.White
+                        ),
+                        textStyle = MaterialTheme.typography.bodySmall
+                    )
+                    ExposedDropdownMenu(
+                        expanded = levelExpanded,
+                        onDismissRequest = { levelExpanded = false }
+                    ) {
+                        listOf("100","200","300","400").forEach { l ->
+                            DropdownMenuItem(
+                                text = { Text("${l} Level", color = Color.White) },
+                                onClick = { level = l; levelExpanded = false }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // ── Apply / Clear buttons ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                if (currentAssignment != null) {
+                    Text(
+                        text = "✕ Clear",
+                        modifier = Modifier
+                            .clickable { onClear() }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFF87171)
+                    )
+                }
+                Button(
+                    onClick = {
+                        onAssign(
+                            ManualAssignment(
+                                fileId = unmatchedFile.fileId,
+                                fileName = unmatchedFile.fileName,
+                                resourceType = resourceType,
+                                courseCode = courseCode,
+                                level = level.ifBlank {
+                                    // Infer from existing course or default to 200
+                                    allCourses.find { it.code == courseCode }?.level ?: "200"
+                                }
+                            )
+                        )
+                    },
+                    enabled = level.isNotBlank() && (resourceType == "TB" || courseCode.isNotBlank()),
+                    shape = RoundedCornerShape(6.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
+                    contentPadding = ButtonDefaults.TextButtonContentPadding
+                ) {
+                    Text(
+                        text = if (currentAssignment != null) "✓ Update" else "✓ Assign",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
     }
 }
@@ -486,25 +808,77 @@ private suspend fun scanProposal(proposal: Proposal) {
 }
 
 /**
- * Approve a proposal: write all matched resources to Firestore and clean up.
+ * Approve a proposal: write all matched (AI + manual) resources to Firestore and clean up.
  */
-private suspend fun approveProposal(proposal: Proposal, reviewerEmail: String) {
+private suspend fun approveProposal(
+    proposal: Proposal,
+    reviewerEmail: String,
+    manualAssignments: Map<String, ManualAssignment> = emptyMap()
+) {
     val preview = proposal.aiPreview ?: return
-
-    // For each matched item, save the master folder link to course_resources
     val masterFolderUrl = proposal.driveLink
 
-    // Group matched items by course code to combine LN and PQ into one save
-    val groupedByCode = preview.matchedItems.groupBy { it.courseCode }
+    // ── 1. Convert manual assignments to AiMatchedItem ──
+    val manualMatched = manualAssignments.values.map { assignment ->
+        val allCourses = CourseRepository.courses.value
+        val existing = allCourses.find { it.code == assignment.courseCode }
+        val resourceLabel = when (assignment.resourceType) {
+            "LN" -> "Lecture Notes"
+            "PQ" -> "Past Questions"
+            "TB" -> "Textbook"
+            else -> "Other"
+        }
+        AiMatchedItem(
+            courseCode = assignment.courseCode,
+            courseName = existing?.name ?: assignment.courseCode,
+            level = assignment.level.ifBlank { existing?.level ?: "200" },
+            semester = existing?.semester ?: 1,
+            resourceType = assignment.resourceType,
+            resourceLabel = resourceLabel,
+            fileName = assignment.fileName,
+            fileId = assignment.fileId
+        )
+    }
+
+    // ── 2. Combine AI matched + manual matched ──
+    val allItems = preview.matchedItems + manualMatched
+
+    // Separate textbooks WITHOUT course code (go to level_textbooks)
+    val levelTextbookItems = allItems.filter {
+        it.resourceType == "TB" && it.courseCode.isBlank()
+    }
+    val courseItems = allItems.filter {
+        it.resourceType != "TB" || it.courseCode.isNotBlank()
+    }
+
+    // ── 3. Save level-wide textbooks ──
+    for (tb in levelTextbookItems) {
+        LevelTextbookRepository.add(
+            level = tb.level.ifBlank { "200" },
+            LevelTextbook(
+                level = tb.level.ifBlank { "200" },
+                masterFolderUrl = masterFolderUrl,
+                label = tb.fileName.removeSuffix(".pdf").removeSuffix(".PDF")
+                    .replace("_", " ").replace("-", " ").trim(),
+                submittedBy = proposal.submittedBy,
+                notes = "[Textbook] from ${tb.fileName} | ${proposal.notes}"
+            )
+        )
+    }
+
+    // ── 4. Group course items by course code ──
+    val groupedByCode = courseItems.groupBy { it.courseCode }
 
     for ((courseCode, items) in groupedByCode) {
         val lectureNotesUrl = if (items.any { it.resourceType == "LN" }) masterFolderUrl else ""
         val pastQuestionsUrl = if (items.any { it.resourceType == "PQ" }) masterFolderUrl else ""
+        val textbookUrl = if (items.any { it.resourceType == "TB" }) masterFolderUrl else ""
 
         // Also check if existing course has resources we should keep
         val existing = CourseRepository.findCourse(courseCode)
         val finalLnu = lectureNotesUrl.ifBlank { existing?.lectureNotesUrl ?: "" }
         val finalPqu = pastQuestionsUrl.ifBlank { existing?.pastQuestionsUrl ?: "" }
+        val finalTbu = textbookUrl.ifBlank { existing?.textbookUrl ?: "" }
 
         // Save combined notes from all items and original proposal
         val notesSummary = items.joinToString("; ") {
@@ -521,6 +895,7 @@ private suspend fun approveProposal(proposal: Proposal, reviewerEmail: String) {
                 code = courseCode,
                 lectureNotesUrl = finalLnu,
                 pastQuestionsUrl = finalPqu,
+                textbookUrl = finalTbu,
                 submittedBy = proposal.submittedBy,
                 notes = finalNotes
             )
@@ -529,17 +904,21 @@ private suspend fun approveProposal(proposal: Proposal, reviewerEmail: String) {
         } else {
             // Create new course entry
             val firstItem = items.first()
+            val inferredLevel = firstItem.level.ifBlank {
+                "${firstItem.courseCode.firstOrNull { it.isDigit() } ?: '2'}00"
+            }
             CourseRepository.addCourse(
                 Course(
                     code = courseCode,
                     name = firstItem.courseName,
                     category = inferCategory(courseCode),
-                    level = firstItem.level,
+                    level = inferredLevel,
                     semester = firstItem.semester,
                     progress = 0,
                     isPending = false,
                     lectureNotesUrl = finalLnu,
                     pastQuestionsUrl = finalPqu,
+                    textbookUrl = finalTbu,
                     submittedBy = proposal.submittedBy,
                     notes = finalNotes
                 )
@@ -551,12 +930,13 @@ private suspend fun approveProposal(proposal: Proposal, reviewerEmail: String) {
             code = courseCode,
             lectureNotesUrl = finalLnu,
             pastQuestionsUrl = finalPqu,
+            textbookUrl = finalTbu,
             submittedBy = proposal.submittedBy,
             notes = finalNotes
         )
     }
 
-    // Mark the proposal as approved
+    // ── 5. Mark the proposal as approved ──
     ProposalRepository.approve(proposal.id, reviewerEmail)
 }
 
@@ -642,12 +1022,14 @@ private fun CourseManageRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 // Show resource indicators
-                if (course.lectureNotesUrl.isNotBlank() || course.pastQuestionsUrl.isNotBlank()) {
+                if (course.hasResources) {
                     Text(
                         text = buildString {
                             if (course.lectureNotesUrl.isNotBlank()) append("📖 LN")
                             if (course.lectureNotesUrl.isNotBlank() && course.pastQuestionsUrl.isNotBlank()) append(" | ")
                             if (course.pastQuestionsUrl.isNotBlank()) append("📝 PQ")
+                            if ((course.lectureNotesUrl.isNotBlank() || course.pastQuestionsUrl.isNotBlank()) && course.textbookUrl.isNotBlank()) append(" | ")
+                            if (course.textbookUrl.isNotBlank()) append("📚 TB")
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary

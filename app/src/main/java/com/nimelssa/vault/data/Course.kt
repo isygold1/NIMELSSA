@@ -11,6 +11,7 @@ data class Course(
     val isPending: Boolean = false,
     val lectureNotesUrl: String = "",
     val pastQuestionsUrl: String = "",
+    val textbookUrl: String = "",
     val submittedBy: String = "",
     val notes: String = ""
 ) {
@@ -18,5 +19,6 @@ data class Course(
     val displaySemester: String get() = if (semester == 1) "1st Semester" else "2nd Semester"
 
     /** Returns true if this course has at least one resource attached */
-    val hasResources: Boolean get() = lectureNotesUrl.isNotBlank() || pastQuestionsUrl.isNotBlank()
+    val hasResources: Boolean get() =
+        lectureNotesUrl.isNotBlank() || pastQuestionsUrl.isNotBlank() || textbookUrl.isNotBlank()
 }

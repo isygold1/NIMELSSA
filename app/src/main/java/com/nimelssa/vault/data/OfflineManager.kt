@@ -77,6 +77,18 @@ object OfflineManager {
                 }
             }
 
+            if (course.textbookUrl.isNotBlank()) {
+                try {
+                    val file = File(dir, "textbook${getExtension(course.textbookUrl)}")
+                    if (!file.exists()) {
+                        downloadFile(course.textbookUrl, file)
+                        downloaded = true
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to download textbook for ${course.code}", e)
+                }
+            }
+
             downloaded
         }
 
@@ -90,6 +102,7 @@ object OfflineManager {
         val prefix = when (resourceType) {
             "lectureNotes" -> "lecture_notes"
             "pastQuestions" -> "past_questions"
+            "textbook" -> "textbook"
             else -> return null
         }
 

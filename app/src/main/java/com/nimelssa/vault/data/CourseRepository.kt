@@ -120,6 +120,7 @@ object CourseRepository {
                 merged.copy(
                     lectureNotesUrl = merged.lectureNotesUrl.ifBlank { next.lectureNotesUrl },
                     pastQuestionsUrl = merged.pastQuestionsUrl.ifBlank { next.pastQuestionsUrl },
+                    textbookUrl = merged.textbookUrl.ifBlank { next.textbookUrl },
                     submittedBy = listOfNotNull(
                         merged.submittedBy.takeIf { it.isNotBlank() },
                         next.submittedBy.takeIf { it.isNotBlank() }
@@ -188,6 +189,7 @@ object CourseRepository {
         code: String,
         lectureNotesUrl: String,
         pastQuestionsUrl: String,
+        textbookUrl: String = "",
         submittedBy: String,
         notes: String
     ) {
@@ -198,6 +200,7 @@ object CourseRepository {
                     it.copy(
                         lectureNotesUrl = lectureNotesUrl.ifBlank { it.lectureNotesUrl },
                         pastQuestionsUrl = pastQuestionsUrl.ifBlank { it.pastQuestionsUrl },
+                        textbookUrl = textbookUrl.ifBlank { it.textbookUrl },
                         submittedBy = submittedBy.ifBlank { it.submittedBy },
                         notes = notes.ifBlank { it.notes }
                     )
@@ -216,6 +219,7 @@ object CourseRepository {
                 isPending = false,
                 lectureNotesUrl = lectureNotesUrl,
                 pastQuestionsUrl = pastQuestionsUrl,
+                textbookUrl = textbookUrl,
                 submittedBy = submittedBy,
                 notes = notes
             )

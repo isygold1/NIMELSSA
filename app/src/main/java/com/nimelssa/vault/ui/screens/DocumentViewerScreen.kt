@@ -279,8 +279,22 @@ private fun ResourceListView(
             )
         }
 
+        // Textbook
+        val localTextbook = OfflineManager.getLocalFile(course.code, "textbook")
+        if (course.textbookUrl.isNotBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            ResourceCard(
+                title = "📚 Textbook / Reference",
+                url = course.textbookUrl,
+                notes = course.notes,
+                isAvailableOffline = localTextbook != null,
+                isOnline = isOnline,
+                onOpen = { onOpenUrl(course.textbookUrl, "${course.code} — Textbook") }
+            )
+        }
+
         // No resources
-        if (course.lectureNotesUrl.isBlank() && course.pastQuestionsUrl.isBlank()) {
+        if (course.lectureNotesUrl.isBlank() && course.pastQuestionsUrl.isBlank() && course.textbookUrl.isBlank()) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),

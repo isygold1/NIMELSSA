@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
+import com.nimelssa.vault.data.LevelTextbookRepository
 import com.nimelssa.vault.data.UserRole
 import com.nimelssa.vault.data.UserSession
 import com.nimelssa.vault.ui.components.CourseCard
@@ -55,6 +56,8 @@ fun WorkspaceScreen(
 
     val courses = CourseRepository.getFilteredMerged(selectedLevel, selectedSemester)
     val categories = CourseRepository.getCategories(selectedLevel, selectedSemester)
+    val levelTextbooks by LevelTextbookRepository.textbooks.collectAsState()
+    val textbooksForLevel = levelTextbooks[selectedLevel] ?: emptyList()
 
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         // Level selector
@@ -160,8 +163,42 @@ fun WorkspaceScreen(
                     CourseCard(
                         course = course,
                         onStudyNotes = { onOpenViewer(course) },
-                        onPastQuestions = { onOpenViewer(course) }
+                        onPastQuestions = { onOpenViewer(course) },
+                        onTextbook = { onOpenViewer(course) }
                     )
+                }
+            }
+
+            // ── Level-wide Textbooks section ──
+            if (textbooksForLevel.isNotEmpty()) {
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "📚 Level Textbooks",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+                textbooksForLevel.forEach { tb ->
+                    item {
+                        val tbCourse = Course(
+                            code = "TEXTBOOK",
+                            name = tb.label.ifBlank { "Reference Textbooks" },
+                            category = "TEXTBOOKS",
+                            level = selectedLevel,
+                            semester = 1,
+                            textbookUrl = tb.masterFolderUrl,
+                            notes = tb.notes
+                        )
+                        CourseCard(
+                            course = tbCourse,
+                            onStudyNotes = {},
+                            onPastQuestions = {},
+                            onTextbook = { onOpenViewer(tbCourse) }
+                        )
+                    }
                 }
             }
         }

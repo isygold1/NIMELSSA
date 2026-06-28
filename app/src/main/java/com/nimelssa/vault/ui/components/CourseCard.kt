@@ -27,6 +27,7 @@ fun CourseCard(
     course: Course,
     onStudyNotes: () -> Unit,
     onPastQuestions: () -> Unit,
+    onTextbook: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -77,8 +78,10 @@ fun CourseCard(
 
             val hasNotes = course.lectureNotesUrl.isNotBlank()
             val hasPqs = course.pastQuestionsUrl.isNotBlank()
+            val hasTb = course.textbookUrl.isNotBlank()
+            val hasAny = hasNotes || hasPqs || hasTb
 
-            if (hasNotes || hasPqs) {
+            if (hasAny) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -99,6 +102,15 @@ fun CourseCard(
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text("📝 Past Questions", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                    if (hasTb) {
+                        OutlinedButton(
+                            onClick = onTextbook,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("📚 Textbook", style = MaterialTheme.typography.labelLarge)
                         }
                     }
                 }
