@@ -2,8 +2,9 @@ package com.nimelssa.vault.data
 
 /**
  * A proposal submitted by a student containing a Google Drive link.
- * The AI scans the link to identify course codes and resource types
- * before admin/rep approval.
+ * The student selects which level the resource is for (targetLevel),
+ * so the correct rep sees it. The AI scans the link to identify
+ * course codes and resource types before approval.
  */
 data class Proposal(
     val id: String = "",
@@ -12,6 +13,7 @@ data class Proposal(
     val submittedAt: Long = System.currentTimeMillis(),
     val driveLink: String = "",             // the Google Drive link (file or folder)
     val notes: String = "",
+    val targetLevel: String = "",           // the level this concerns (e.g. "200"); rep sees proposals where targetLevel == their repLevel
     val status: String = "pending",         // pending / approved / rejected
     val aiPreview: AiPreview? = null,       // populated after AI scan
     val reviewedBy: String? = null,

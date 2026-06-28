@@ -42,7 +42,13 @@ object ProposalRepository {
     }
 
     /** Submit a new proposal. Returns the generated ID. */
-    suspend fun submit(driveLink: String, notes: String, submittedBy: String, submittedByName: String): String {
+    suspend fun submit(
+        driveLink: String,
+        notes: String,
+        submittedBy: String,
+        submittedByName: String,
+        targetLevel: String = ""
+    ): String {
         val proposal = Proposal(
             id = "",  // Firestore will generate
             submittedBy = submittedBy,
@@ -50,6 +56,7 @@ object ProposalRepository {
             submittedAt = System.currentTimeMillis(),
             driveLink = driveLink,
             notes = notes,
+            targetLevel = targetLevel,
             status = "pending"
         )
 

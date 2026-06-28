@@ -14,6 +14,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -44,6 +48,8 @@ fun ProposeScreen(
     val user by UserSession.state.collectAsState()
     var driveLink by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var targetLevel by remember { mutableStateOf("") }
+    var levelExpanded by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -123,6 +129,40 @@ fun ProposeScreen(
             shape = RoundedCornerShape(8.dp)
         )
 
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // ── Target Level selector ──
+        @OptIn(ExperimentalMaterial3Api::class)
+        ExposedDropdownMenuBox(
+            expanded = levelExpanded,
+            onExpandedChange = { levelExpanded = it }
+        ) {
+            OutlinedTextField(
+                value = if (targetLevel.isNotBlank()) "${targetLevel} Level" else "Select target level",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("This resource is for...") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = levelExpanded) },
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                singleLine = true,
+                shape = RoundedCornerShape(8.dp)
+            )
+            ExposedDropdownMenu(
+                expanded = levelExpanded,
+                onDismissRequest = { levelExpanded = false }
+            ) {
+                listOf("100", "200", "300", "400").forEach { level ->
+                    DropdownMenuItem(
+                        text = { Text("${level} Level") },
+                        onClick = {
+                            targetLevel = level
+                            levelExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(20.dp))
 
         // ── Success notification ──
@@ -167,7 +207,12 @@ fun ProposeScreen(
                     return@Button
                 }
 
-                message = null
+                    if (targetLevel.isBlank()) {
+                        message = "❌ Please select which level this resource is for."
+                        return@Button
+                    }
+
+                    message = null
                 isLoading = true
 
                 scope.launch {
@@ -176,11 +221,13 @@ fun ProposeScreen(
                             driveLink = link,
                             notes = notes.trim(),
                             submittedBy = user.email,
-                            submittedByName = user.name
+                            submittedByName = user.name,
+                            targetLevel = targetLevel
                         )
-                        message = "✅ Proposal submitted! AI will scan and notify Rep/Admin for review."
+                        message = "✅ Proposal submitted! The ${targetLevel}L rep will review it."
                         driveLink = ""
                         notes = ""
+                        targetLevel = ""
                         onProposed()
                     } catch (e: Exception) {
                         message = "❌ Failed to submit: ${e.localizedMessage}"

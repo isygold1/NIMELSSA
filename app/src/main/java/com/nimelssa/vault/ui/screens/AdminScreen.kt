@@ -99,10 +99,16 @@ fun AdminScreen(
     var showAddForm by remember { mutableStateOf(false) }
 
     // ── Filter proposals for rep's level ──
+    // Proposals are routed by targetLevel (set by student at submission time).
+    // Admins see all; reps see only proposals whose targetLevel matches their repLevel.
+    // Proposals without a targetLevel fall through to admin.
     val pendingProposals = if (isAdmin) {
         proposals.filter { it.status == "pending" }
     } else {
-        proposals.filter { it.status == "pending" && matchesRepLevel(it, repLevel) }
+        proposals.filter {
+            it.status == "pending" &&
+            (it.targetLevel == repLevel || it.targetLevel.isBlank())
+        }
     }
 
     // Track which proposals have been scanned (in-memory during this session)
@@ -274,6 +280,17 @@ private fun ProposalCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFFD1D5DB),
                     maxLines = 2
+                )
+            }
+
+            // Target level badge
+            if (proposal.targetLevel.isNotBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "🎯 For: ${proposal.targetLevel} Level",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF86EFAC),
+                    fontWeight = FontWeight.Bold
                 )
             }
 
@@ -999,12 +1016,6 @@ private fun inferCategory(code: String): String = when {
     code.startsWith("STA") -> "MATHEMATICS"
     code.startsWith("CSC") -> "COMPUTER SCIENCE"
     else -> "MEDICAL LABORATORY SCIENCE"
-}
-
-/** Check if a proposal's AI results match a rep's level */
-private fun matchesRepLevel(proposal: Proposal, repLevel: String): Boolean {
-    val preview = proposal.aiPreview ?: return false
-    return preview.matchedItems.any { it.level == repLevel }
 }
 
 /** Truncate a URL for display */
