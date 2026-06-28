@@ -425,20 +425,7 @@ private suspend fun scanProposal(proposal: Proposal) {
         return
     }
 
-    if (result.files.isEmpty()) {
-        ProposalRepository.updateAiPreview(
-            proposal.id,
-            AiPreview(
-                scanStatus = "failed",
-                totalFilesScanned = 0,
-                sourceFolderName = result.folderName,
-                errorMessage = "No files found in the link."
-            )
-        )
-        return
-    }
-
-    // Parse each file
+    // Parse each file (may be empty — that's OK, it just means no matches)
     val matchedItems = mutableListOf<AiMatchedItem>()
     val unmatchedFiles = mutableListOf<com.nimelssa.vault.data.AiUnmatchedFile>()
 

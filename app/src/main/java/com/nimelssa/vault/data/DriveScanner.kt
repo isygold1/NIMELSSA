@@ -150,18 +150,29 @@ object DriveScanner {
     }
 
     /**
-     * List all files (non-folder) inside a folder.
-     * Uses URL-encoded query parameters for the Drive API.
+     * List ALL files inside a folder, **recursing into subfolders**.
+     *
+     * Drive folders often have nested structures like:
+     *   📁 200 Level/
+     *      📁 Lecture Notes/
+     *         📄 CSC201_OOP.pdf
+     *      📁 Past Questions/
+     *         📄 CSC201_PQ.pdf
+     *
+     * This function walks the entire tree and returns all leaf files.
      */
-    private fun listFolderContents(folderId: String): List<DriveFileInfo> {
+    private fun listFolderContents(folderId: String, depth: Int = 0): List<DriveFileInfo> {
+        // Safety: max 5 levels deep to prevent runaway recursion
+        if (depth > 5) return emptyList()
+
         val files = mutableListOf<DriveFileInfo>()
+        val subFolders = mutableListOf<String>()
         var pageToken: String? = null
+        var apiError: String? = null
 
         do {
-            // Build the Drive API query:
-            //   '{folderId}' in parents and mimeType != 'application/vnd.google-apps.folder'
-            // The entire q parameter value must be URL-encoded.
-            val query = "'$folderId' in parents and mimeType != 'application/vnd.google-apps.folder'"
+            // List ALL children (files AND folders)
+            val query = "'$folderId' in parents"
 
             val params = mutableMapOf(
                 "q" to query,
@@ -183,7 +194,8 @@ object DriveScanner {
                 val responseCode = conn.responseCode
                 if (responseCode != 200) {
                     val errorBody = readStream(conn.errorStream ?: conn.inputStream)
-                    Log.e(TAG, "Failed to list folder contents: HTTP $responseCode — $errorBody")
+                    apiError = "HTTP $responseCode: ${parseError(errorBody)}"
+                    Log.e(TAG, "listFolderContents($folderId) failed: $apiError")
                     break
                 }
 
@@ -191,15 +203,23 @@ object DriveScanner {
                 val items = json.optJSONArray("files") ?: JSONArray()
                 for (i in 0 until items.length()) {
                     val item = items.getJSONObject(i)
-                    files.add(
-                        DriveFileInfo(
-                            id = item.optString("id", ""),
-                            name = item.optString("name", "Unnamed"),
-                            mimeType = item.optString("mimeType", ""),
-                            webViewLink = item.optString("webViewLink", null),
-                            size = if (item.has("size")) item.optLong("size", 0) else null
+                    val mimeType = item.optString("mimeType", "")
+                    val isFolder = mimeType == "application/vnd.google-apps.folder"
+                    val fileId = item.optString("id", "")
+
+                    if (isFolder) {
+                        subFolders.add(fileId)
+                    } else {
+                        files.add(
+                            DriveFileInfo(
+                                id = fileId,
+                                name = item.optString("name", "Unnamed"),
+                                mimeType = mimeType,
+                                webViewLink = item.optString("webViewLink", null),
+                                size = if (item.has("size")) item.optLong("size", 0) else null
+                            )
                         )
-                    )
+                    }
                 }
 
                 pageToken = json.optString("nextPageToken", null)
@@ -208,6 +228,12 @@ object DriveScanner {
                 conn.disconnect()
             }
         } while (pageToken != null)
+
+        // If there was an API error at this level, log it but continue
+        // with whatever we did get, plus recursively process subfolders
+        for (subId in subFolders) {
+            files.addAll(listFolderContents(subId, depth + 1))
+        }
 
         return files
     }
