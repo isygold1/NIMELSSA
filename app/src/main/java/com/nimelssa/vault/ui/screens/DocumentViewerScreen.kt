@@ -50,9 +50,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
 import com.nimelssa.vault.data.OfflineManager
+import com.nimelssa.vault.data.Resource
+import com.nimelssa.vault.data.ResourceRepository
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,7 +66,10 @@ fun DocumentViewerScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val allCourses by CourseRepository.courses.collectAsState()
+    val resourceMap by ResourceRepository.resources.collectAsState()
     val course = allCourses.find { it.code == courseCode }
+    val resources = resourceMap[courseCode] ?: emptyList()
+
     if (course == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Course not found: $courseCode", color = MaterialTheme.colorScheme.error)
@@ -134,12 +138,10 @@ fun DocumentViewerScreen(
                             onClick = {
                                 isSaving = true
                                 scope.launch {
-                                    if (course.isOffline) {
+                                    if (course.code in OfflineManager.getSavedCodes()) {
                                         OfflineManager.removeOffline(course.code)
-                                        CourseRepository.toggleOfflineFlag(course.code)
                                     } else {
-                                        OfflineManager.saveOffline(course)
-                                        CourseRepository.toggleOfflineFlag(course.code)
+                                        OfflineManager.saveOfflineResources(course.code, resources)
                                     }
                                     isSaving = false
                                 }
@@ -147,9 +149,10 @@ fun DocumentViewerScreen(
                             enabled = !isSaving
                         ) {
                             Text(
-                                text = if (course.isOffline) "✓ Saved Offline"
+                                text = if (course.code in OfflineManager.getSavedCodes()) "✓ Saved Offline"
                                        else "Save Offline",
-                                color = if (course.isOffline) MaterialTheme.colorScheme.primary
+                                color = if (course.code in OfflineManager.getSavedCodes())
+                                        MaterialTheme.colorScheme.primary
                                         else MaterialTheme.colorScheme.secondary
                             )
                         }
@@ -183,6 +186,7 @@ fun DocumentViewerScreen(
             // ── Resource list mode ──
             ResourceListView(
                 course = course,
+                resources = resources,
                 isOnline = isOnline,
                 onOpenUrl = { url, title ->
                     activeUrl = url
@@ -197,7 +201,8 @@ fun DocumentViewerScreen(
 
 @Composable
 private fun ResourceListView(
-    course: Course,
+    course: com.nimelssa.vault.data.Course,
+    resources: List<Resource>,
     isOnline: Boolean,
     onOpenUrl: (String, String) -> Unit
 ) {
@@ -218,16 +223,9 @@ private fun ResourceListView(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        if (course.submittedBy.isNotBlank()) {
-            Text(
-                text = "Submitted by: ${course.submittedBy}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
 
         // Offline badge
-        if (course.isOffline) {
+        if (course.code in OfflineManager.getSavedCodes()) {
             Spacer(modifier = Modifier.height(6.dp))
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFDCFCE7)),
@@ -252,49 +250,21 @@ private fun ResourceListView(
         )
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Lecture Notes
-        val localNotes = OfflineManager.getLocalFile(course.code, "lectureNotes")
-        if (course.lectureNotesUrl.isNotBlank()) {
-            ResourceCard(
-                title = "📖 Study Notes / Lecture Slides",
-                url = course.lectureNotesUrl,
-                notes = course.notes,
-                isAvailableOffline = localNotes != null,
-                isOnline = isOnline,
-                onOpen = { onOpenUrl(course.lectureNotesUrl, "${course.code} — Study Notes") }
-            )
-        }
-
-        // Past Questions
-        val localQuestions = OfflineManager.getLocalFile(course.code, "pastQuestions")
-        if (course.pastQuestionsUrl.isNotBlank()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            ResourceCard(
-                title = "📝 Past Questions & Test Papers",
-                url = course.pastQuestionsUrl,
-                notes = course.notes,
-                isAvailableOffline = localQuestions != null,
-                isOnline = isOnline,
-                onOpen = { onOpenUrl(course.pastQuestionsUrl, "${course.code} — Past Questions") }
-            )
-        }
-
-        // Textbook
-        val localTextbook = OfflineManager.getLocalFile(course.code, "textbook")
-        if (course.textbookUrl.isNotBlank()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            ResourceCard(
-                title = "📚 Textbook / Reference",
-                url = course.textbookUrl,
-                notes = course.notes,
-                isAvailableOffline = localTextbook != null,
-                isOnline = isOnline,
-                onOpen = { onOpenUrl(course.textbookUrl, "${course.code} — Textbook") }
-            )
-        }
-
-        // No resources
-        if (course.lectureNotesUrl.isBlank() && course.pastQuestionsUrl.isBlank() && course.textbookUrl.isBlank()) {
+        if (resources.isNotEmpty()) {
+            resources.forEach { resource ->
+                val localFile = OfflineManager.getLocalFile(course.code, resource.resourceType.lowercase())
+                ResourceCard(
+                    title = "${resource.icon} ${resource.resourceLabel}",
+                    subtitle = resource.label.ifBlank { resource.masterUrl },
+                    url = resource.masterUrl,
+                    notes = resource.notes,
+                    isAvailableOffline = localFile != null,
+                    isOnline = isOnline,
+                    onOpen = { onOpenUrl(resource.masterUrl, "${course.code} — ${resource.resourceLabel}") }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        } else {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
@@ -316,7 +286,7 @@ private fun ResourceListView(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Use the Propose tab to submit lecture notes or past questions for this course.",
+                        text = "Use the Propose tab to submit resources for this course.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
@@ -325,18 +295,32 @@ private fun ResourceListView(
             }
         }
 
-        // Contributor notes
-        if (course.notes.isNotBlank()) {
+        // Contributor notes (collect from all resources)
+        val allNotes = resources.map { it.notes }.filter { it.isNotBlank() }
+        if (allNotes.isNotEmpty()) {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = "📌 Contributor Notes",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            allNotes.forEach { note ->
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Submitted by info
+        val submitters = resources.map { it.submittedBy }.filter { it.isNotBlank() }.distinct()
+        if (submitters.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = course.notes,
-                style = MaterialTheme.typography.bodyMedium,
+                text = "Submitted by: ${submitters.joinToString(", ")}",
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -350,6 +334,7 @@ private fun ResourceListView(
 @Composable
 private fun ResourceCard(
     title: String,
+    subtitle: String,
     url: String,
     notes: String,
     isAvailableOffline: Boolean,

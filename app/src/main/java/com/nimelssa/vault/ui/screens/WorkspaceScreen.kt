@@ -36,7 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
-import com.nimelssa.vault.data.LevelTextbookRepository
+import com.nimelssa.vault.data.Resource
+import com.nimelssa.vault.data.ResourceRepository
 import com.nimelssa.vault.data.UserRole
 import com.nimelssa.vault.data.UserSession
 import com.nimelssa.vault.ui.components.CourseCard
@@ -54,10 +55,10 @@ fun WorkspaceScreen(
     var levelExpanded by remember { mutableStateOf(false) }
     val levels = listOf("100", "200", "300", "400")
 
-    val courses = CourseRepository.getFilteredMerged(selectedLevel, selectedSemester)
+    val courses = CourseRepository.getFiltered(selectedLevel, selectedSemester)
     val categories = CourseRepository.getCategories(selectedLevel, selectedSemester)
-    val levelTextbooks by LevelTextbookRepository.textbooks.collectAsState()
-    val textbooksForLevel = levelTextbooks[selectedLevel] ?: emptyList()
+    val resourceMap by ResourceRepository.resources.collectAsState()
+    val levelTextbooks = ResourceRepository.getLevelTextbooks(selectedLevel)
 
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         // Level selector
@@ -139,7 +140,7 @@ fun WorkspaceScreen(
                         Text(text = "🗄️", fontSize = MaterialTheme.typography.headlineLarge.fontSize)
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "No approved library links catalogued here yet.",
+                            text = "No courses available for this level and semester.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -160,8 +161,10 @@ fun WorkspaceScreen(
 
                 val categoryCourses = courses.filter { it.category == category }
                 items(categoryCourses) { course ->
+                    val courseResources = resourceMap[course.code] ?: emptyList()
                     CourseCard(
                         course = course,
+                        resources = courseResources,
                         onStudyNotes = { onOpenViewer(course) },
                         onPastQuestions = { onOpenViewer(course) },
                         onTextbook = { onOpenViewer(course) }
@@ -170,7 +173,7 @@ fun WorkspaceScreen(
             }
 
             // ── Level-wide Textbooks section ──
-            if (textbooksForLevel.isNotEmpty()) {
+            if (levelTextbooks.isNotEmpty()) {
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -181,21 +184,18 @@ fun WorkspaceScreen(
                         modifier = Modifier.padding(vertical = 8.dp)
                     )
                 }
-                textbooksForLevel.forEach { tb ->
+                levelTextbooks.forEach { tb ->
                     item {
                         val tbCourse = Course(
                             code = "TEXTBOOK",
                             name = tb.label.ifBlank { "Reference Textbooks" },
                             category = "TEXTBOOKS",
                             level = selectedLevel,
-                            semester = 1,
-                            textbookUrl = tb.masterFolderUrl,
-                            notes = tb.notes
+                            semester = 1
                         )
                         CourseCard(
                             course = tbCourse,
-                            onStudyNotes = {},
-                            onPastQuestions = {},
+                            resources = listOf(tb),
                             onTextbook = { onOpenViewer(tbCourse) }
                         )
                     }

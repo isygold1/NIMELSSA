@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
+import com.nimelssa.vault.data.Resource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -31,11 +32,7 @@ object OfflineManager {
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         cacheBase = File(context.cacheDir, "offline").also { it.mkdirs() }
 
-        // Restore offline flags into CourseRepository
         val codes = getSavedCodes()
-        for (code in codes) {
-            CourseRepository.mergeOfflineFlag(code, true)
-        }
         Log.d(TAG, "Initialised. ${codes.size} courses marked offline.")
     }
 
@@ -48,44 +45,27 @@ object OfflineManager {
      * Downloads all resource files for a course to local cache.
      * Returns true if any file was downloaded.
      */
-    suspend fun downloadCourseResources(course: Course): Boolean =
+    suspend fun downloadCourseResources(courseCode: String, resources: List<Resource>): Boolean =
         withContext(Dispatchers.IO) {
-            val dir = File(cacheBase, course.code).also { it.mkdirs() }
+            val dir = File(cacheBase, courseCode).also { it.mkdirs() }
             var downloaded = false
 
-            if (course.lectureNotesUrl.isNotBlank()) {
-                try {
-                    val file = File(dir, "lecture_notes${getExtension(course.lectureNotesUrl)}")
-                    if (!file.exists()) {
-                        downloadFile(course.lectureNotesUrl, file)
-                        downloaded = true
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to download lecture notes for ${course.code}", e)
+            for (resource in resources) {
+                if (resource.masterUrl.isBlank()) continue
+                val prefix = when (resource.resourceType) {
+                    "LN" -> "lecture_notes"
+                    "PQ" -> "past_questions"
+                    "TB" -> "textbook"
+                    else -> "resource"
                 }
-            }
-
-            if (course.pastQuestionsUrl.isNotBlank()) {
                 try {
-                    val file = File(dir, "past_questions${getExtension(course.pastQuestionsUrl)}")
+                    val file = File(dir, "$prefix${getExtension(resource.masterUrl)}")
                     if (!file.exists()) {
-                        downloadFile(course.pastQuestionsUrl, file)
+                        downloadFile(resource.masterUrl, file)
                         downloaded = true
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to download past questions for ${course.code}", e)
-                }
-            }
-
-            if (course.textbookUrl.isNotBlank()) {
-                try {
-                    val file = File(dir, "textbook${getExtension(course.textbookUrl)}")
-                    if (!file.exists()) {
-                        downloadFile(course.textbookUrl, file)
-                        downloaded = true
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to download textbook for ${course.code}", e)
+                    Log.e(TAG, "Failed to download ${resource.resourceType} for $courseCode", e)
                 }
             }
 
@@ -100,10 +80,10 @@ object OfflineManager {
         if (!dir.exists()) return null
 
         val prefix = when (resourceType) {
-            "lectureNotes" -> "lecture_notes"
-            "pastQuestions" -> "past_questions"
-            "textbook" -> "textbook"
-            else -> return null
+            "ln", "LN", "lectureNotes" -> "lecture_notes"
+            "pq", "PQ", "pastQuestions" -> "past_questions"
+            "tb", "TB", "textbook" -> "textbook"
+            else -> "resource"
         }
 
         val files = dir.listFiles { f -> f.name.startsWith(prefix) }
@@ -111,20 +91,18 @@ object OfflineManager {
     }
 
     /**
-     * Marks a course as saved offline: downloads files and persists the flag.
+     * Saves resources for a course offline: downloads files and persists the flag.
      */
-    suspend fun saveOffline(course: Course) {
+    suspend fun saveOfflineResources(courseCode: String, resources: List<Resource>) {
         // Download the actual files
-        downloadCourseResources(course)
+        downloadCourseResources(courseCode, resources)
 
         // Persist the flag
         val codes = getSavedCodes().toMutableSet()
-        codes.add(course.code)
+        codes.add(courseCode)
         prefs?.edit()?.putStringSet(KEY_OFFLINE_CODES, codes)?.apply()
 
-        // Update in-memory
-        CourseRepository.mergeOfflineFlag(course.code, true)
-        Log.d(TAG, "Saved offline: ${course.code}")
+        Log.d(TAG, "Saved offline: $courseCode (${resources.size} resources)")
     }
 
     /**
@@ -142,8 +120,6 @@ object OfflineManager {
         codes.remove(courseCode)
         prefs?.edit()?.putStringSet(KEY_OFFLINE_CODES, codes)?.apply()
 
-        // Update in-memory
-        CourseRepository.mergeOfflineFlag(courseCode, false)
         Log.d(TAG, "Removed offline: $courseCode")
     }
 

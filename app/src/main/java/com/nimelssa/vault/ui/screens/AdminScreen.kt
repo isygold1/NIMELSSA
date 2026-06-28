@@ -54,11 +54,10 @@ import com.nimelssa.vault.data.CourseRepository
 import com.nimelssa.vault.data.DriveScanner
 import com.nimelssa.vault.data.DriveScanner.ScanResult
 import com.nimelssa.vault.data.FilenameParser
-import com.nimelssa.vault.data.FirestoreCourseSync
-import com.nimelssa.vault.data.LevelTextbook
-import com.nimelssa.vault.data.LevelTextbookRepository
 import com.nimelssa.vault.data.Proposal
 import com.nimelssa.vault.data.ProposalRepository
+import com.nimelssa.vault.data.Resource
+import com.nimelssa.vault.data.ResourceRepository
 import com.nimelssa.vault.data.UserRole
 import com.nimelssa.vault.data.UserSession
 import kotlinx.coroutines.launch
@@ -843,7 +842,7 @@ private suspend fun approveProposal(
     // ── 2. Combine AI matched + manual matched ──
     val allItems = preview.matchedItems + manualMatched
 
-    // Separate textbooks WITHOUT course code (go to level_textbooks)
+    // Separate textbooks WITHOUT course code (go to level textbooks)
     val levelTextbookItems = allItems.filter {
         it.resourceType == "TB" && it.courseCode.isBlank()
     }
@@ -853,16 +852,18 @@ private suspend fun approveProposal(
 
     // ── 3. Save level-wide textbooks ──
     for (tb in levelTextbookItems) {
-        LevelTextbookRepository.add(
-            level = tb.level.ifBlank { "200" },
-            LevelTextbook(
+        ResourceRepository.add(
+            Resource(
+                courseCode = "",
+                resourceType = "TB",
                 level = tb.level.ifBlank { "200" },
-                masterFolderUrl = masterFolderUrl,
+                masterUrl = masterFolderUrl,
                 label = tb.fileName.removeSuffix(".pdf").removeSuffix(".PDF")
                     .replace("_", " ").replace("-", " ").trim(),
                 submittedBy = proposal.submittedBy,
                 notes = "[Textbook] from ${tb.fileName} | ${proposal.notes}"
-            )
+            ),
+            approvedBy = reviewerEmail
         )
     }
 
@@ -870,17 +871,6 @@ private suspend fun approveProposal(
     val groupedByCode = courseItems.groupBy { it.courseCode }
 
     for ((courseCode, items) in groupedByCode) {
-        val lectureNotesUrl = if (items.any { it.resourceType == "LN" }) masterFolderUrl else ""
-        val pastQuestionsUrl = if (items.any { it.resourceType == "PQ" }) masterFolderUrl else ""
-        val textbookUrl = if (items.any { it.resourceType == "TB" }) masterFolderUrl else ""
-
-        // Also check if existing course has resources we should keep
-        val existing = CourseRepository.findCourse(courseCode)
-        val finalLnu = lectureNotesUrl.ifBlank { existing?.lectureNotesUrl ?: "" }
-        val finalPqu = pastQuestionsUrl.ifBlank { existing?.pastQuestionsUrl ?: "" }
-        val finalTbu = textbookUrl.ifBlank { existing?.textbookUrl ?: "" }
-
-        // Save combined notes from all items and original proposal
         val notesSummary = items.joinToString("; ") {
             "[${it.resourceLabel}] from ${it.fileName}"
         }
@@ -889,20 +879,37 @@ private suspend fun approveProposal(
             notesSummary.takeIf { it.isNotBlank() }
         ).joinToString(" | ")
 
-        // Update CourseRepository in memory
-        if (existing != null) {
-            CourseRepository.mergeCourseResources(
-                code = courseCode,
-                lectureNotesUrl = finalLnu,
-                pastQuestionsUrl = finalPqu,
-                textbookUrl = finalTbu,
-                submittedBy = proposal.submittedBy,
-                notes = finalNotes
+        // Create one Resource per matched type
+        val typesInGroup = items.map { it.resourceType }.distinct()
+        for (type in typesInGroup) {
+            val typeItems = items.filter { it.resourceType == type }
+            val firstItem = typeItems.first()
+            val resourceLabel = when (type) {
+                "LN" -> "Lecture Notes"
+                "PQ" -> "Past Questions"
+                "TB" -> "Textbook"
+                else -> "Other"
+            }
+
+            ResourceRepository.add(
+                Resource(
+                    courseCode = courseCode,
+                    resourceType = type,
+                    level = firstItem.level.ifBlank {
+                        "${courseCode.firstOrNull { it.isDigit() } ?: '2'}00"
+                    },
+                    masterUrl = masterFolderUrl,
+                    label = "$resourceLabel for $courseCode",
+                    submittedBy = proposal.submittedBy,
+                    notes = finalNotes
+                ),
+                approvedBy = reviewerEmail
             )
-            // Remove pending flag if it exists
-            CourseRepository.approveCourse(courseCode)
-        } else {
-            // Create new course entry
+        }
+
+        // Ensure course exists in CourseRepository
+        val existing = CourseRepository.findCourse(courseCode)
+        if (existing == null) {
             val firstItem = items.first()
             val inferredLevel = firstItem.level.ifBlank {
                 "${firstItem.courseCode.firstOrNull { it.isDigit() } ?: '2'}00"
@@ -914,26 +921,10 @@ private suspend fun approveProposal(
                     category = inferCategory(courseCode),
                     level = inferredLevel,
                     semester = firstItem.semester,
-                    progress = 0,
-                    isPending = false,
-                    lectureNotesUrl = finalLnu,
-                    pastQuestionsUrl = finalPqu,
-                    textbookUrl = finalTbu,
-                    submittedBy = proposal.submittedBy,
-                    notes = finalNotes
+                    progress = 0
                 )
             )
         }
-
-        // Save to Firestore
-        FirestoreCourseSync.saveResources(
-            code = courseCode,
-            lectureNotesUrl = finalLnu,
-            pastQuestionsUrl = finalPqu,
-            textbookUrl = finalTbu,
-            submittedBy = proposal.submittedBy,
-            notes = finalNotes
-        )
     }
 
     // ── 5. Mark the proposal as approved ──
@@ -993,6 +984,13 @@ private fun CourseManageRow(
     onPreview: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val resourceMap by ResourceRepository.resources.collectAsState()
+    val courseResources = resourceMap[course.code] ?: emptyList()
+    val hasNotes = courseResources.any { it.resourceType == "LN" }
+    val hasPqs = courseResources.any { it.resourceType == "PQ" }
+    val hasTb = courseResources.any { it.resourceType == "TB" }
+    val hasAny = hasNotes || hasPqs || hasTb
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -1022,14 +1020,14 @@ private fun CourseManageRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 // Show resource indicators
-                if (course.hasResources) {
+                if (hasAny) {
                     Text(
                         text = buildString {
-                            if (course.lectureNotesUrl.isNotBlank()) append("📖 LN")
-                            if (course.lectureNotesUrl.isNotBlank() && course.pastQuestionsUrl.isNotBlank()) append(" | ")
-                            if (course.pastQuestionsUrl.isNotBlank()) append("📝 PQ")
-                            if ((course.lectureNotesUrl.isNotBlank() || course.pastQuestionsUrl.isNotBlank()) && course.textbookUrl.isNotBlank()) append(" | ")
-                            if (course.textbookUrl.isNotBlank()) append("📚 TB")
+                            if (hasNotes) append("📖 LN")
+                            if (hasNotes && hasPqs) append(" | ")
+                            if (hasPqs) append("📝 PQ")
+                            if ((hasNotes || hasPqs) && hasTb) append(" | ")
+                            if (hasTb) append("📚 TB")
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
@@ -1037,7 +1035,7 @@ private fun CourseManageRow(
                 }
             }
             Row {
-                if (course.hasResources) {
+                if (hasAny) {
                     Button(
                         onClick = onPreview,
                         modifier = Modifier.padding(end = 4.dp),
@@ -1053,9 +1051,9 @@ private fun CourseManageRow(
                         text = "🗑️",
                         modifier = Modifier.clickable {
                             scope.launch {
-                                FirestoreCourseSync.removeResources(course.code)
+                                ResourceRepository.removeAllForCourse(course.code)
+                                CourseRepository.removeCourse(course.code)
                             }
-                            CourseRepository.removeCourse(course.code)
                         },
                         style = MaterialTheme.typography.titleMedium
                     )

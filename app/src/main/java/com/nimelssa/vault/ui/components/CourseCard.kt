@@ -21,15 +21,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.Course
+import com.nimelssa.vault.data.Resource
 
 @Composable
 fun CourseCard(
     course: Course,
-    onStudyNotes: () -> Unit,
-    onPastQuestions: () -> Unit,
+    resources: List<Resource> = emptyList(),
+    onStudyNotes: () -> Unit = {},
+    onPastQuestions: () -> Unit = {},
     onTextbook: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val hasNotes = resources.any { it.resourceType == "LN" }
+    val hasPqs = resources.any { it.resourceType == "PQ" }
+    val hasTb = resources.any { it.resourceType == "TB" }
+    val hasAny = hasNotes || hasPqs || hasTb
+
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -56,30 +63,19 @@ fun CourseCard(
                         fontWeight = FontWeight.SemiBold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
-                    if (course.isOffline) {
-                        Text(
-                            text = "💾 Offline Vault Active",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    } else {
-                        Text(
-                            text = "🌐 Stream Link Mode",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        text = if (resources.any { it.masterUrl.isNotBlank() }) "🌐 Link Mode"
+                               else "⏳ No resources yet",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (resources.any { it.masterUrl.isNotBlank() })
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 RadialProgress(percentage = course.progress)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-
-            val hasNotes = course.lectureNotesUrl.isNotBlank()
-            val hasPqs = course.pastQuestionsUrl.isNotBlank()
-            val hasTb = course.textbookUrl.isNotBlank()
-            val hasAny = hasNotes || hasPqs || hasTb
 
             if (hasAny) {
                 Row(
