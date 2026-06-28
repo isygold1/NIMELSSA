@@ -295,4 +295,29 @@ object FilenameParser {
 
         return null
     }
+
+    /**
+     * Infers the academic level (e.g., "100", "200", "300") from a course code.
+     * The first digit of the numeric part determines the level.
+     * E.g., "CSC101" → "100", "MLS301" → "300", "BIO201" → "200".
+     */
+    private fun inferLevelFromCode(courseCode: String): String {
+        val digits = courseCode.filter { it.isDigit() }
+        if (digits.length >= 3) {
+            val hundreds = digits.first().digitToIntOrNull()
+            if (hundreds != null && hundreds in 1..5) {
+                return "${hundreds}00"
+            }
+        }
+        // Fallback: try to infer from known prefix
+        return when {
+            courseCode.startsWith("GST") -> "100"
+            courseCode.startsWith("CSC") -> "100"
+            courseCode.startsWith("BIO") -> "100"
+            courseCode.startsWith("CHM") -> "100"
+            courseCode.startsWith("PHY") -> "100"
+            courseCode.startsWith("MLS") -> "100"
+            else -> "100"
+        }
+    }
 }

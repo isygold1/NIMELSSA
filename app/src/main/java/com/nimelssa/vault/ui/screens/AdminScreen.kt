@@ -1074,6 +1074,7 @@ private fun AddCourseForm(
     lockLevel: Boolean,
     onAdded: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     var code by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
@@ -1191,10 +1192,12 @@ private fun AddCourseForm(
             Button(
                 onClick = {
                     if (code.isNotBlank() && name.isNotBlank()) {
-                        CourseRepository.addCourse(
-                            Course(code, name, category.ifBlank { "GENERAL" }, level, semester, 0)
-                        )
-                        onAdded()
+                        scope.launch {
+                            CourseRepository.addCourse(
+                                Course(code, name, category.ifBlank { "GENERAL" }, level, semester, 0)
+                            )
+                            onAdded()
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
