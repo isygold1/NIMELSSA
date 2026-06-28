@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
+import com.nimelssa.vault.data.Levels
 import com.nimelssa.vault.data.Resource
 import com.nimelssa.vault.data.ResourceRepository
 import com.nimelssa.vault.data.UserRole
@@ -45,7 +46,7 @@ import com.nimelssa.vault.ui.components.CourseCard
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorkspaceScreen(
-    onOpenViewer: (Course) -> Unit,
+    onOpenViewer: (Course, String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val userState by UserSession.state.collectAsState()
@@ -53,7 +54,7 @@ fun WorkspaceScreen(
     var selectedLevel by remember { mutableStateOf(initialLevel) }
     var selectedSemester by remember { mutableIntStateOf(1) }
     var levelExpanded by remember { mutableStateOf(false) }
-    val levels = listOf("100", "200", "300", "400")
+    val levels = Levels.ALL
 
     val courses = CourseRepository.getFiltered(selectedLevel, selectedSemester)
     val categories = CourseRepository.getCategories(selectedLevel, selectedSemester)
@@ -162,13 +163,13 @@ fun WorkspaceScreen(
                 val categoryCourses = courses.filter { it.category == category }
                 items(categoryCourses) { course ->
                     val courseResources = resourceMap[course.code] ?: emptyList()
-                    CourseCard(
-                        course = course,
-                        resources = courseResources,
-                        onStudyNotes = { onOpenViewer(course) },
-                        onPastQuestions = { onOpenViewer(course) },
-                        onTextbook = { onOpenViewer(course) }
-                    )
+            CourseCard(
+                course = course,
+                resources = courseResources,
+                onStudyNotes = { onOpenViewer(course, "LN") },
+                onPastQuestions = { onOpenViewer(course, "PQ") },
+                onTextbook = { onOpenViewer(course, "TB") }
+            )
                 }
             }
 
@@ -196,7 +197,7 @@ fun WorkspaceScreen(
                         CourseCard(
                             course = tbCourse,
                             resources = listOf(tb),
-                            onTextbook = { onOpenViewer(tbCourse) }
+                            onTextbook = { onOpenViewer(tbCourse, "TB") }
                         )
                     }
                 }

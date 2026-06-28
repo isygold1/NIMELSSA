@@ -61,6 +61,7 @@ import kotlinx.coroutines.launch
 fun DocumentViewerScreen(
     courseCode: String,
     onClose: () -> Unit,
+    initialResourceType: String? = null,  // "LN", "PQ", "TB", or null to show all
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -68,7 +69,10 @@ fun DocumentViewerScreen(
     val allCourses by CourseRepository.courses.collectAsState()
     val resourceMap by ResourceRepository.resources.collectAsState()
     val course = allCourses.find { it.code == courseCode }
-    val resources = resourceMap[courseCode] ?: emptyList()
+    val allResources = resourceMap[courseCode] ?: emptyList()
+    val resources = if (initialResourceType != null)
+        allResources.filter { it.resourceType == initialResourceType }
+    else allResources
 
     if (course == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

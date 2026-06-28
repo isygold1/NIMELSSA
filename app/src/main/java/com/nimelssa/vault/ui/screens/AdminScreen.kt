@@ -54,6 +54,7 @@ import com.nimelssa.vault.data.CourseRepository
 import com.nimelssa.vault.data.DriveScanner
 import com.nimelssa.vault.data.DriveScanner.ScanResult
 import com.nimelssa.vault.data.FilenameParser
+import com.nimelssa.vault.data.Levels
 import com.nimelssa.vault.data.Proposal
 import com.nimelssa.vault.data.ProposalRepository
 import com.nimelssa.vault.data.Resource
@@ -86,7 +87,7 @@ private data class ManualAssignment(
 @Composable
 fun AdminScreen(
     repLevel: String,
-    onPreview: (Course) -> Unit = {},
+    onPreview: (Course, String?) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val user by UserSession.state.collectAsState()
@@ -228,7 +229,7 @@ fun AdminScreen(
             CourseManageRow(
                 course = course,
                 canDelete = isAdmin || course.level == repLevel,
-                onPreview = { onPreview(course) }
+                onPreview = { onPreview(course, null) }
             )
             Spacer(modifier = Modifier.height(6.dp))
         }
@@ -689,7 +690,7 @@ private fun UnmatchedAssignmentCard(
                         expanded = levelExpanded,
                         onDismissRequest = { levelExpanded = false }
                     ) {
-                        listOf("100","200","300","400").forEach { l ->
+                        Levels.ALL.forEach { l ->
                             DropdownMenuItem(
                                 text = { Text("${l} Level", color = Color.White) },
                                 onClick = { level = l; levelExpanded = false }
@@ -1211,7 +1212,7 @@ private fun AddCourseForm(
                             expanded = levelExpanded,
                             onDismissRequest = { levelExpanded = false }
                         ) {
-                            listOf("100","200","300","400").forEach { l ->
+                        Levels.ALL.forEach { l ->
                                 DropdownMenuItem(
                                     text = { Text("${l} Level") },
                                     onClick = { level = l; levelExpanded = false }

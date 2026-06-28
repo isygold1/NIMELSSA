@@ -18,3 +18,12 @@ data class Course(
     val displayLevel: String get() = "${level} Level"
     val displaySemester: String get() = if (semester == 1) "1st Semester" else "2nd Semester"
 }
+
+/**
+ * Single source of truth for academic levels used across the app.
+ * Add or remove entries here and every dropdown picks up the change.
+ */
+object Levels {
+    /** All undergraduate levels including 500. */
+    val ALL = listOf("100", "200", "300", "400", "500")
+}

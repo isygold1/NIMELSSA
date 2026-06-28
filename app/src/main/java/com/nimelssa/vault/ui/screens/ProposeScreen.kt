@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nimelssa.vault.data.Levels
 import com.nimelssa.vault.data.ProposalRepository
 import com.nimelssa.vault.data.UserSession
 import kotlinx.coroutines.launch
@@ -151,7 +152,7 @@ fun ProposeScreen(
                 expanded = levelExpanded,
                 onDismissRequest = { levelExpanded = false }
             ) {
-                listOf("100", "200", "300", "400").forEach { level ->
+                Levels.ALL.forEach { level ->
                     DropdownMenuItem(
                         text = { Text("${level} Level") },
                         onClick = {

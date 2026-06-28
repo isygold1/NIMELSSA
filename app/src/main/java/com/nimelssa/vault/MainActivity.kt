@@ -65,14 +65,16 @@ object Routes {
     const val WORKSPACE = "workspace"
     const val PROPOSE = "propose"
     const val ADMIN = "admin"
-    const val VIEWER = "viewer/{courseCode}"
+    const val VIEWER = "viewer/{courseCode}?resourceType={resourceType}"
     const val PROFILE = "profile"
     const val CBT = "cbt"
     const val EMAIL_CHANGE = "email_change"
     const val REPORT = "report"
     const val REPORTS_DASHBOARD = "reports_dashboard"
 
-    fun viewerRoute(courseCode: String) = "viewer/$courseCode"
+    fun viewerRoute(courseCode: String, resourceType: String? = null) =
+        if (resourceType != null) "viewer/$courseCode?resourceType=$resourceType"
+        else "viewer/$courseCode"
 }
 
 @Composable
@@ -188,8 +190,8 @@ fun MainApp() {
             ) {
                 composable(Routes.WORKSPACE) {
                     WorkspaceScreen(
-                        onOpenViewer = { course ->
-                            navController.navigate(Routes.viewerRoute(course.code))
+                        onOpenViewer = { course, resourceType ->
+                            navController.navigate(Routes.viewerRoute(course.code, resourceType))
                         }
                     )
                 }
@@ -209,19 +211,28 @@ fun MainApp() {
                 composable(Routes.ADMIN) {
                     AdminScreen(
                         repLevel = userState.repLevel,
-                        onPreview = { course ->
-                            navController.navigate(Routes.viewerRoute(course.code))
+                        onPreview = { course, resourceType ->
+                            navController.navigate(Routes.viewerRoute(course.code, resourceType))
                         }
                     )
                 }
 
                 composable(
                     route = Routes.VIEWER,
-                    arguments = listOf(navArgument("courseCode") { type = NavType.StringType })
+                    arguments = listOf(
+                        navArgument("courseCode") { type = NavType.StringType },
+                        navArgument("resourceType") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        }
+                    )
                 ) { backStackEntry ->
                     val courseCode = backStackEntry.arguments?.getString("courseCode") ?: ""
+                    val resourceType = backStackEntry.arguments?.getString("resourceType")
                     DocumentViewerScreen(
                         courseCode = courseCode,
+                        initialResourceType = resourceType,
                         onClose = { navController.popBackStack() }
                     )
                 }

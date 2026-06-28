@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.AuthMode
+import com.nimelssa.vault.data.Levels
 import com.nimelssa.vault.data.UserRole
 import kotlinx.coroutines.delay
 
@@ -372,7 +373,7 @@ fun AuthScreen(
                         expanded = levelExpanded,
                         onDismissRequest = { levelExpanded = false }
                     ) {
-                        listOf("100", "200", "300", "400").forEach { lvl ->
+                        Levels.ALL.forEach { lvl ->
                             DropdownMenuItem(
                                 text = { Text("${lvl} Level") },
                                 onClick = { selectedLevel = lvl; levelExpanded = false }

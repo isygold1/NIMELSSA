@@ -12,7 +12,7 @@ import kotlinx.coroutines.tasks.await
  *
  * Collection: `courses/{courseCode}`
  *
- * On first launch (empty collection), seeds with the 54 standard MLS courses.
+ * On first launch (empty collection), seeds with 56 standard MLS courses across 100-400 levels.
  * After seeding, all mutations go through this repository to keep
  * Firestore and in-memory cache in sync.
  */

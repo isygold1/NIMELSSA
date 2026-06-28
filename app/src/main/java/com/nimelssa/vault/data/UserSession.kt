@@ -25,9 +25,6 @@ data class UserState(
     val authMode: AuthMode = AuthMode.LOGIN,
     val errorMessage: String? = null
 )
-/** Convenience: the user's academic level (repLevel for reps, level for others). */
-val UserState.effectiveLevel: String get() = if (role == UserRole.REP) repLevel else level
-
 object UserSession {
     private const val TAG = "UserSession"
 
