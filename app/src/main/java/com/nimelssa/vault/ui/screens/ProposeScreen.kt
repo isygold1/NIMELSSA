@@ -100,7 +100,7 @@ private suspend fun classifyDriveLink(url: String): AiClassification? = withCont
         connection.apply {
             requestMethod = "POST"
             setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Authorization", "Bearer YOUR_GROQ_API_KEY") // ⚠️ Move to Cloud Function
+            setRequestProperty("Authorization", "Bearer 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") // ⚠️ Move to Cloud Function before release
             doOutput = true
             connectTimeout = 10_000
             readTimeout = 15_000
