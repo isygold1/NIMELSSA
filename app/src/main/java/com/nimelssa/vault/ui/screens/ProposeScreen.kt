@@ -72,10 +72,22 @@ private suspend fun classifyDriveLink(url: String): AiClassification? = withCont
             }
         """.trimIndent()
 
+        // WHY: Groq runs on custom LPU hardware — classification response arrives
+        // in ~300ms which keeps the "Scan" button feel instant for the student.
+        // Model: llama-3.3-70b-versatile — reliable structured JSON output.
+        //
+        // ⚠️ PRODUCTION: Move this key to a Firebase Cloud Function so it is
+        // never shipped inside the APK.
+        // Cloud Function URL: https://YOUR_REGION-YOUR_PROJECT.cloudfunctions.net/classifyResource
         val requestBody = JSONObject().apply {
-            put("model", "claude-sonnet-4-6")
+            put("model", "llama-3.3-70b-versatile")
             put("max_tokens", 300)
+            put("temperature", 0.1) // WHY: Low temp = deterministic JSON, less hallucination
             put("messages", org.json.JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", "You are a university course classifier. Always respond with valid JSON only. No explanation, no markdown, no backticks.")
+                })
                 put(JSONObject().apply {
                     put("role", "user")
                     put("content", prompt)
@@ -83,25 +95,25 @@ private suspend fun classifyDriveLink(url: String): AiClassification? = withCont
             })
         }.toString()
 
-        // WHY: Replace this API key with a Firebase Cloud Function endpoint
-        // before production to avoid exposing the key in the APK.
-        // Cloud Function URL: https://YOUR_REGION-YOUR_PROJECT.cloudfunctions.net/classifyResource
-        val connection = URL("https://api.anthropic.com/v1/messages")
+        val connection = URL("https://api.groq.com/openai/v1/chat/completions")
             .openConnection() as HttpsURLConnection
         connection.apply {
             requestMethod = "POST"
             setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("x-api-key", "YOUR_ANTHROPIC_API_KEY") // ⚠️ Move to Cloud Function
-            setRequestProperty("anthropic-version", "2023-06-01")
+            setRequestProperty("Authorization", "Bearer YOUR_GROQ_API_KEY") // ⚠️ Move to Cloud Function
             doOutput = true
+            connectTimeout = 10_000
+            readTimeout = 15_000
             outputStream.write(requestBody.toByteArray())
         }
 
         val responseText = connection.inputStream.bufferedReader().readText()
         val responseJson = JSONObject(responseText)
-        val content = responseJson.getJSONArray("content")
+        val content = responseJson
+            .getJSONArray("choices")
             .getJSONObject(0)
-            .getString("text")
+            .getJSONObject("message")
+            .getString("content")
             .trim()
 
         // Parse Claude's JSON response
