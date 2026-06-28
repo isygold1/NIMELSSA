@@ -63,23 +63,24 @@ import com.nimelssa.vault.data.UserSession
 import kotlinx.coroutines.launch
 
 /**
- * An admin's manual assignment for an unmatched file.
- * Converts an AiUnmatchedFile into a resource after the admin picks
- * type, course code, and level.
+ * A rep's or admin's manual assignment for an unmatched file.
+ * Converts an AiUnmatchedFile into a resource after picking
+ * type, course code, level, and semester.
  */
 private data class ManualAssignment(
     val fileId: String,
     val fileName: String,
     val resourceType: String = "TB",   // "LN", "PQ", "TB", "OT"
-    val courseCode: String = "",        // empty allowed for TB
-    val level: String = ""
+    val courseCode: String = "",        // empty allowed for TB (level-wide textbook)
+    val level: String = "",
+    val semester: Int = 1               // 1 = 1st semester, 2 = 2nd semester
 )
 
 /**
- * Rep Desk / Admin Console with AI-powered proposal scanning.
+ * Resource Manager / Admin Console with AI-powered proposal scanning.
  *
- * Reps see proposals whose AI results match their level.
- * Admins see all proposals.
+ * Reps manage resources for their level — scan proposals, assign files,
+ * build the vault. Admins oversee all levels.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -117,16 +118,16 @@ fun AdminScreen(
     ) {
         // ── Header ──
         Text(
-            text = if (isAdmin) "🛡️ Admin Console — Full Authority"
-                   else "🛡️ ${repLevel}L Rep Desk",
+            text = if (isAdmin) "🛡️ Admin Console — Overseer"
+                   else "📋 ${repLevel}L Resource Manager",
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.error,
             fontWeight = FontWeight.Bold
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = if (isAdmin) "AI scans Drive links and auto-classifies resources."
-                   else "Review proposals and manage courses for your level.",
+            text = if (isAdmin) "You oversee all levels. AI scans Drive links and auto-classifies resources."
+                   else "You manage resources for ${repLevel}L. Scan proposals, assign files, and build the vault.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -471,6 +472,9 @@ private fun UnmatchedAssignmentCard(
     var level by remember(currentAssignment) {
         mutableStateOf(currentAssignment?.level ?: "")
     }
+    var semester by remember(currentAssignment) {
+        mutableIntStateOf(currentAssignment?.semester ?: 1)
+    }
     var showCourseSuggestions by remember { mutableStateOf(false) }
     var levelExpanded by remember { mutableStateOf(false) }
 
@@ -584,10 +588,11 @@ private fun UnmatchedAssignmentCard(
                                     onClick = {
                                         courseCode = code
                                         showCourseSuggestions = false
-                                        // Auto-fill level from existing course
+                                        // Auto-fill level & semester from existing course
                                         val found = allCourses.find { it.code == code }
-                                        if (found != null && level.isBlank()) {
-                                            level = found.level
+                                        if (found != null) {
+                                            if (level.isBlank()) level = found.level
+                                            semester = found.semester
                                         }
                                     }
                                 )
@@ -677,6 +682,47 @@ private fun UnmatchedAssignmentCard(
                 }
             }
 
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // ── Semester selector ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Semester: ",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF94A3B8)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                SingleChoiceSegmentedButtonRow {
+                    SegmentedButton(
+                        selected = semester == 1,
+                        onClick = { semester = 1 },
+                        shape = SegmentedButtonDefaults.itemShape(
+                            index = 0,
+                            count = 2
+                        ),
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = MaterialTheme.colorScheme.primary,
+                            activeContentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) { Text("1st", style = MaterialTheme.typography.labelSmall) }
+                    SegmentedButton(
+                        selected = semester == 2,
+                        onClick = { semester = 2 },
+                        shape = SegmentedButtonDefaults.itemShape(
+                            index = 1,
+                            count = 2
+                        ),
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = MaterialTheme.colorScheme.primary,
+                            activeContentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) { Text("2nd", style = MaterialTheme.typography.labelSmall) }
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
             // ── Apply / Clear buttons ──
@@ -705,7 +751,8 @@ private fun UnmatchedAssignmentCard(
                                 level = level.ifBlank {
                                     // Infer from existing course or default to 200
                                     allCourses.find { it.code == courseCode }?.level ?: "200"
-                                }
+                                },
+                                semester = semester
                             )
                         )
                     },
@@ -831,7 +878,7 @@ private suspend fun approveProposal(
             courseCode = assignment.courseCode,
             courseName = existing?.name ?: assignment.courseCode,
             level = assignment.level.ifBlank { existing?.level ?: "200" },
-            semester = existing?.semester ?: 1,
+            semester = assignment.semester,
             resourceType = assignment.resourceType,
             resourceLabel = resourceLabel,
             fileName = assignment.fileName,
