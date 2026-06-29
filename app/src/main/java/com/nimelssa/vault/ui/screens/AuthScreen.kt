@@ -28,6 +28,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,6 +68,8 @@ fun AuthScreen(
     var showForgotPassword by remember { mutableStateOf(false) }
     var resetSent by remember { mutableStateOf(false) }
     var selectedLevel by remember { mutableStateOf("100") }
+    var isRep by remember { mutableStateOf(false) }
+    var repLevel by remember { mutableStateOf("100") }
 
     // Auto-dismiss error after 5 seconds
     if (errorMessage != null) {
@@ -119,7 +122,9 @@ fun AuthScreen(
                 localError = "Passwords do not match. Please re-enter."
                 return
             }
-            onSignup(name.trim(), email.trim(), password, UserRole.STUDENT, selectedLevel)
+            val role = if (isRep) UserRole.REP else UserRole.STUDENT
+            val level = if (isRep) repLevel else selectedLevel
+            onSignup(name.trim(), email.trim(), password, role, level)
         } else {
             if (email.isBlank() || !email.contains("@")) {
                 localError = "Please enter a valid email address."
@@ -382,6 +387,73 @@ fun AuthScreen(
                     }
                 }
                 Spacer(modifier = Modifier.height(14.dp))
+
+                // ── Rep self-signup toggle ──
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    androidx.compose.material3.Checkbox(
+                        checked = isRep,
+                        onCheckedChange = { isRep = it },
+                        enabled = !isLoading,
+                        colors = androidx.compose.material3.CheckboxDefaults.colors(
+                            checkedColor = Color(0xFF0C826B),
+                            uncheckedColor = Color(0xFF94A3B8)
+                        )
+                    )
+                    Text(
+                        text = "I am a Class Rep",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFCBD5E1),
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
+
+                // Rep level picker (shown only when isRep is true)
+                if (isRep) {
+                    var repLevelExpanded by remember { mutableStateOf(false) }
+                    ExposedDropdownMenuBox(
+                        expanded = repLevelExpanded,
+                        onExpandedChange = { repLevelExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = "${repLevel} Level",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Representing Level (Rep)") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = repLevelExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            singleLine = true,
+                            enabled = !isLoading,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = Color(0xFF23314F),
+                                unfocusedContainerColor = Color(0xFF1C273E),
+                                focusedContainerColor = Color(0xFF1C273E),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedLabelColor = Color(0xFFCBD5E1),
+                                unfocusedLabelColor = Color(0xFFCBD5E1),
+                                cursorColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = repLevelExpanded,
+                            onDismissRequest = { repLevelExpanded = false }
+                        ) {
+                            Levels.ALL.forEach { lvl ->
+                                DropdownMenuItem(
+                                    text = { Text("${lvl} Level") },
+                                    onClick = { repLevel = lvl; repLevelExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             // Forgot password link (login mode only)

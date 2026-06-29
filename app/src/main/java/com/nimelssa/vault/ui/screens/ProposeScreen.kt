@@ -49,11 +49,18 @@ fun ProposeScreen(
     val user by UserSession.state.collectAsState()
     var driveLink by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
-    var targetLevel by remember { mutableStateOf("") }
+    // Auto-fill level from user profile
+    val defaultLevel = when {
+        user.role == com.nimelssa.vault.data.UserRole.REP -> user.repLevel
+        else -> user.level
+    }
+    var targetLevel by remember { mutableStateOf(defaultLevel) }
     var levelExpanded by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    // Auto-detect semester from current month
+    val autoSemester = if (java.util.Calendar.getInstance().get(java.util.Calendar.MONTH) < 6) 1 else 2
 
     Column(
         modifier = modifier
@@ -163,6 +170,14 @@ fun ProposeScreen(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "📅 Auto-detected: ${autoSemester}${if (autoSemester == 1) "st" else "nd"} Semester (${if (autoSemester == 1) "Jan-Jun" else "Jul-Dec"})",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp)
+        )
 
         Spacer(modifier = Modifier.height(20.dp))
 

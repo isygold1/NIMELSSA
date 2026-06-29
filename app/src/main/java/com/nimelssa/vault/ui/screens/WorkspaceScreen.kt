@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
 import com.nimelssa.vault.data.Levels
+import com.nimelssa.vault.data.ProposalRepository
 import com.nimelssa.vault.data.Resource
 import com.nimelssa.vault.data.ResourceRepository
 import com.nimelssa.vault.data.UserRole
@@ -47,6 +48,7 @@ import com.nimelssa.vault.ui.components.CourseCard
 @Composable
 fun WorkspaceScreen(
     onOpenViewer: (Course, String?) -> Unit,
+    onNavigateToPropose: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val userState by UserSession.state.collectAsState()
@@ -54,6 +56,7 @@ fun WorkspaceScreen(
     var selectedLevel by remember { mutableStateOf(initialLevel) }
     var selectedSemester by remember { mutableIntStateOf(1) }
     var levelExpanded by remember { mutableStateOf(false) }
+    var pendingExpanded by remember { mutableStateOf(false) }
     val levels = Levels.ALL
 
     val courses = CourseRepository.getFiltered(selectedLevel, selectedSemester)
@@ -61,7 +64,52 @@ fun WorkspaceScreen(
     val resourceMap by ResourceRepository.resources.collectAsState()
     val levelTextbooks = ResourceRepository.getLevelTextbooks(selectedLevel)
 
+    // ── Student's own proposals (pending tracker) ──
+    val myProposals = if (userState.role == UserRole.STUDENT) {
+        ProposalRepository.getBySubmitter(userState.email)
+    } else emptyList()
+    val pendingCount = myProposals.count { it.status == "pending" }
+
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        // ── Pending proposals tracker (students only) ──
+        if (pendingCount > 0 && userState.role == UserRole.STUDENT) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = { pendingExpanded = !pendingExpanded },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "📋 $pendingCount Proposal${if (pendingCount != 1) "s" else ""} Pending Review",
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+            if (pendingExpanded) {
+                Spacer(modifier = Modifier.height(4.dp))
+                myProposals.filter { it.status == "pending" }.forEach { prop ->
+                    androidx.compose.material3.Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Text(
+                            text = "• ${prop.resourceType} — ${prop.courseCode}",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(12.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
         // Level selector
         ExposedDropdownMenuBox(
             expanded = levelExpanded,
@@ -145,6 +193,16 @@ fun WorkspaceScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = onNavigateToPropose,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Be the first to contribute")
+                        }
                     }
                 }
             }

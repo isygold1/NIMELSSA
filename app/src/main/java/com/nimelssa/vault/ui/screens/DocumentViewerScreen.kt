@@ -86,6 +86,7 @@ fun DocumentViewerScreen(
     var activeTitle by remember { mutableStateOf("") }
     var webViewLoading by remember { mutableStateOf(false) }
     var webViewProgress by remember { mutableIntStateOf(0) }
+    var webViewError by remember { mutableStateOf<String?>(null) }
     var isOnline by remember { mutableStateOf(OfflineManager.isOnline(context)) }
     var isSaving by remember { mutableStateOf(false) }
 
@@ -178,13 +179,47 @@ fun DocumentViewerScreen(
             )
         }
 
-        if (activeUrl != null) {
+        if (webViewError != null) {
+            // ── Broken link error card ──
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(text = "🔗💔", fontSize = MaterialTheme.typography.headlineLarge.fontSize)
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = webViewError!!,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        webViewError = null
+                        activeUrl = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("← Back to resources")
+                }
+            }
+        } else if (activeUrl != null) {
             // ── WebView mode ──
             val resolvedUrl = resolveResourceUrl(activeUrl!!)
             ResourceWebView(
                 url = resolvedUrl,
                 onLoadingChanged = { loading -> webViewLoading = loading },
-                onProgressChanged = { progress -> webViewProgress = progress }
+                onProgressChanged = { progress -> webViewProgress = progress },
+                onError = { errorDesc ->
+                    webViewError = errorDesc
+                }
             )
         } else {
             // ── Resource list mode ──
@@ -210,6 +245,8 @@ private fun ResourceListView(
     isOnline: Boolean,
     onOpenUrl: (String, String) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -244,7 +281,51 @@ private fun ResourceListView(
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // ── Prominent offline save banner ──
+        if (isOnline && resources.isNotEmpty() && course.code !in OfflineManager.getSavedCodes()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFE0F2FE))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "📥 Save for offline access",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF075985)
+                        )
+                        Text(
+                            text = "Open without internet anytime",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF075985)
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                OfflineManager.saveOfflineResources(course.code, resources)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF0369A1)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Save All", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         Text(
             text = "📚 Available Resources",
@@ -477,13 +558,16 @@ private fun displayUrl(url: String): String {
 private fun ResourceWebView(
     url: String,
     onLoadingChanged: (Boolean) -> Unit,
-    onProgressChanged: (Int) -> Unit
+    onProgressChanged: (Int) -> Unit,
+    onError: (String) -> Unit = {}
 ) {
     var webView by remember { mutableStateOf<WebView?>(null) }
+    var hadError by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Reload if URL changes
         LaunchedEffect(url) {
+            hadError = false
             webView?.loadUrl(url)
         }
 
@@ -509,16 +593,31 @@ private fun ResourceWebView(
                     }
                     webViewClient = object : WebViewClient() {
                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                            hadError = false
                             onLoadingChanged(true)
                         }
                         override fun onPageFinished(view: WebView?, url: String?) {
-                            onLoadingChanged(false)
+                            if (!hadError) onLoadingChanged(false)
+                        }
+                        override fun onReceivedError(
+                            view: WebView?,
+                            request: android.webkit.WebResourceRequest?,
+                            error: android.webkit.WebResourceError?
+                        ) {
+                            // Only treat main-frame errors as fatal
+                            if (request?.isForMainFrame == true) {
+                                hadError = true
+                                val description = error?.description?.toString()
+                                    ?: "Failed to load resource"
+                                onLoadingChanged(false)
+                                onError("Could not open this resource.\n$description")
+                            }
                         }
                     }
                     webChromeClient = object : WebChromeClient() {
                         override fun onProgressChanged(view: WebView?, newProgress: Int) {
                             onProgressChanged(newProgress)
-                            if (newProgress == 100) onLoadingChanged(false)
+                            if (newProgress == 100 && !hadError) onLoadingChanged(false)
                         }
                     }
                     loadUrl(url)

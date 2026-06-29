@@ -192,6 +192,13 @@ fun MainApp() {
                     WorkspaceScreen(
                         onOpenViewer = { course, resourceType ->
                             navController.navigate(Routes.viewerRoute(course.code, resourceType))
+                        },
+                        onNavigateToPropose = {
+                            navController.navigate(Routes.PROPOSE) {
+                                popUpTo(Routes.WORKSPACE) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
                         }
                     )
                 }

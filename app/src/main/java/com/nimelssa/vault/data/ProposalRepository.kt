@@ -141,6 +141,11 @@ object ProposalRepository {
         }
     }
 
+    /** Get proposals submitted by a specific user (email). */
+    fun getBySubmitter(submitterEmail: String): List<Proposal> {
+        return _proposals.value.filter { it.submittedBy == submitterEmail }
+    }
+
     /** Count of pending proposals. */
     fun pendingCount(): Int = _proposals.value.count { it.status == "pending" }
 }
