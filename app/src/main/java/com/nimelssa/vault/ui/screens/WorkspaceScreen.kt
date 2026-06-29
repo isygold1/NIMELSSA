@@ -225,6 +225,7 @@ fun WorkspaceScreen(
             CourseCard(
                 course = course,
                 resources = courseResources,
+                onClick = { onOpenViewer(course, null) },
                 onStudyNotes = { onOpenViewer(course, "LN") },
                 onPastQuestions = { onOpenViewer(course, "PQ") },
                 onTextbook = { onOpenViewer(course, "TB") }
@@ -256,6 +257,7 @@ fun WorkspaceScreen(
                         CourseCard(
                             course = tbCourse,
                             resources = listOf(tb),
+                            onClick = { onOpenViewer(tbCourse, null) },
                             onTextbook = { onOpenViewer(tbCourse, "TB") }
                         )
                     }
