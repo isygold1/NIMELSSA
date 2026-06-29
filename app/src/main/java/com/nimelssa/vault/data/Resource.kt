@@ -13,6 +13,8 @@ data class Resource(
     val resourceType: String = "LN",   // "LN", "PQ", "TB", "OT"
     val level: String = "",            // e.g. "300" — used for level-wide resources
     val masterUrl: String = "",        // the approved Drive link
+    val fileId: String = "",           // Drive file ID (for duplicate detection)
+    val md5Checksum: String = "",      // Drive file MD5 checksum (for duplicate detection)
     val label: String = "",            // human-readable label
     val submittedBy: String = "",
     val notes: String = "",

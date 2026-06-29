@@ -153,6 +153,22 @@ object ResourceRepository {
                _resources.value[courseCode]?.isNotEmpty() == true
     }
 
+    /** Find existing resource(s) for a course that match the given MD5 checksum. */
+    fun findByMd5(courseCode: String, md5: String): List<Resource> {
+        if (md5.isBlank()) return emptyList()
+        return (_resources.value[courseCode] ?: emptyList())
+            .filter { it.md5Checksum == md5 && it.md5Checksum.isNotBlank() }
+    }
+
+    /** Find existing resource by Drive file ID. */
+    fun findByFileId(fileId: String): Resource? {
+        for ((_, list) in _resources.value) {
+            val match = list.firstOrNull { it.fileId == fileId && it.fileId.isNotBlank() }
+            if (match != null) return match
+        }
+        return null
+    }
+
     // ── Mutations ───────────────────────────────────────────────
 
     /**
@@ -171,6 +187,8 @@ object ResourceRepository {
             "resourceType" to toSave.resourceType,
             "level" to toSave.level,
             "masterUrl" to toSave.masterUrl,
+            "fileId" to toSave.fileId,
+            "md5Checksum" to toSave.md5Checksum,
             "label" to toSave.label,
             "submittedBy" to toSave.submittedBy,
             "notes" to toSave.notes,

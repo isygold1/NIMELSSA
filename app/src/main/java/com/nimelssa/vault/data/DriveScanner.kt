@@ -120,7 +120,7 @@ object DriveScanner {
     private fun getMetadata(id: String): MetadataResult {
         val urlStr = buildUrl("$API_BASE/files/$id", mapOf(
             "key" to apiKey,
-            "fields" to "id,name,mimeType,webViewLink,size"
+            "fields" to "id,name,mimeType,webViewLink,size,md5Checksum"
         ))
         val url = URL(urlStr)
         val conn = url.openConnection() as HttpURLConnection
@@ -145,6 +145,7 @@ object DriveScanner {
                 name = json.optString("name", "Unnamed"),
                 mimeType = mimeType,
                 webViewLink = json.optString("webViewLink", null),
+                md5Checksum = json.optString("md5Checksum", null),
                 isFolder = isFolder
             )
         } finally {
@@ -303,13 +304,25 @@ object DriveScanner {
         }
     }
 
+    // ── Public helpers for duplicate detection ──
+
+    /** Extract the Drive file/folder ID from any Google Drive link. */
+    fun extractFileId(link: String): String? = extractFileOrFolderId(link)
+
+    /** Get the MD5 checksum for a single Drive file (null for folders). */
+    suspend fun getFileMd5(fileId: String): String? = withContext(Dispatchers.IO) {
+        val meta = getMetadata(fileId)
+        return@withContext if (meta.error == null && !meta.isFolder) meta.md5Checksum else null
+    }
+
     // ── Internal models / helpers ──
 
-    private data class MetadataResult(
+    data class MetadataResult(
         val id: String = "",
         val name: String = "",
         val mimeType: String = "",
         val webViewLink: String? = null,
+        val md5Checksum: String? = null,
         val isFolder: Boolean = false,
         val error: String? = null
     )

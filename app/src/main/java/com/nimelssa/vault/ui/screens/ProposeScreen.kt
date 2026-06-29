@@ -37,8 +37,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nimelssa.vault.data.DriveScanner
 import com.nimelssa.vault.data.Levels
 import com.nimelssa.vault.data.ProposalRepository
+import com.nimelssa.vault.data.ResourceRepository
 import com.nimelssa.vault.data.UserSession
 import kotlinx.coroutines.launch
 
@@ -70,6 +72,8 @@ fun ProposeScreen(
     ) }
     var message by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
+    var duplicateWarning by remember { mutableStateOf<String?>(null) }
+    var pendingLink by remember { mutableStateOf("") }   // Drive link being checked for duplicates
     val scope = rememberCoroutineScope()
 
     Column(
@@ -240,6 +244,56 @@ fun ProposeScreen(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
+        // ── Duplicate warning ──
+        if (duplicateWarning != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFFFFF3CD)
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "⚠️ Possible Duplicate",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF856404)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = duplicateWarning!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF856404)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { duplicateWarning = null },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF6C757D)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) { Text("Cancel", color = Color.White) }
+                        Button(
+                            onClick = {
+                                val link = pendingLink
+                                duplicateWarning = null
+                                pendingLink = ""
+                                // Submit anyway after user confirms
+                                scope.launch { submitProposal(link) }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFDC3545)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) { Text("Submit Anyway", color = Color.White) }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
         // ── Submit button ──
         Button(
             onClick = {
@@ -253,50 +307,81 @@ fun ProposeScreen(
                     return@Button
                 }
 
-                    if (targetLevel.isBlank()) {
-                        message = "❌ Please select which level this resource is for."
-                        return@Button
-                    }
+                if (targetLevel.isBlank()) {
+                    message = "❌ Please select which level this resource is for."
+                    return@Button
+                }
 
-                    message = null
+                message = null
                 isLoading = true
 
                 scope.launch {
-                    try {
-                        ProposalRepository.submit(
-                            driveLink = link,
-                            notes = notes.trim(),
-                            submittedBy = user.email,
-                            submittedByName = user.name,
-                            targetLevel = targetLevel,
-                            semester = selectedSemester
-                        )
-                        message = "✅ Proposal submitted! The ${targetLevel}L rep will review it."
-                        driveLink = ""
-                        notes = ""
-                        targetLevel = ""
-                        selectedSemester = 1
-                        onProposed()
-                    } catch (e: Exception) {
-                        message = "❌ Failed to submit: ${e.localizedMessage}"
-                    } finally {
-                        isLoading = false
+                    // ── Duplicate check ──
+                    pendingLink = link
+                    val fileId = DriveScanner.extractFileId(link)
+                    var md5 = ""
+                    if (fileId != null) {
+                        md5 = DriveScanner.getFileMd5(fileId) ?: ""
                     }
+
+                    if (md5.isNotBlank()) {
+                        val matches = ResourceRepository.allResources
+                            .filter { it.md5Checksum == md5 && it.md5Checksum.isNotBlank() }
+
+                        if (matches.isNotEmpty()) {
+                            val matchInfo = matches.joinToString("\n") { r ->
+                                val c = if (r.courseCode.isNotBlank()) " in ${r.courseCode}" else ""
+                                "📄 ${r.resourceLabel}$c"
+                            }
+                            duplicateWarning = "This file is identical (MD5 match) to ${
+                                matches.size
+                            } existing resource(s):\n$matchInfo\n\nSubmit anyway if this is an update?"
+                            isLoading = false
+                            return@launch
+                        }
+                    }
+
+                    pendingLink = ""
+                    submitProposal(link)
                 }
             },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp),
             shape = RoundedCornerShape(8.dp),
-            enabled = !isLoading,
+            enabled = !isLoading && duplicateWarning == null,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primary
             )
         ) {
             Text(
-                if (isLoading) "Submitting..." else "Submit for AI Review",
+                if (isLoading) "Scanning for duplicates..." else "Submit for AI Review",
                 fontWeight = FontWeight.Bold
             )
+        }
+    }
+
+    // ── Shared submit logic ──
+    suspend fun submitProposal(link: String) {
+        try {
+            ProposalRepository.submit(
+                driveLink = link,
+                notes = notes.trim(),
+                submittedBy = user.email,
+                submittedByName = user.name,
+                targetLevel = targetLevel,
+                semester = selectedSemester
+            )
+            message = "✅ Proposal submitted! The ${targetLevel}L rep will review it."
+            driveLink = ""
+            notes = ""
+            targetLevel = ""
+            selectedSemester = 1
+            onProposed()
+        } catch (e: Exception) {
+            message = "❌ Failed to submit: ${e.localizedMessage}"
+        } finally {
+            isLoading = false
         }
     }
 }

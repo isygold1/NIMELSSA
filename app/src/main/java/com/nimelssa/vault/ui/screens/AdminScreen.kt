@@ -919,12 +919,15 @@ private suspend fun approveProposal(
 
     // ── 3. Save level-wide textbooks ──
     for (tb in levelTextbookItems) {
+        val tbMd5 = DriveScanner.getFileMd5(tb.fileId) ?: ""
         ResourceRepository.add(
             Resource(
                 courseCode = "",
                 resourceType = "TB",
                 level = tb.level.ifBlank { "200" },
                 masterUrl = fileUrl(tb.fileId),
+                fileId = tb.fileId,
+                md5Checksum = tbMd5,
                 label = tb.fileName.removeSuffix(".pdf").removeSuffix(".PDF")
                     .replace("_", " ").replace("-", " ").trim(),
                 submittedBy = proposal.submittedBy,
@@ -958,6 +961,7 @@ private suspend fun approveProposal(
                 else -> "Other"
             }
 
+            val md5 = DriveScanner.getFileMd5(firstItem.fileId) ?: ""
             ResourceRepository.add(
                 Resource(
                     courseCode = courseCode,
@@ -966,6 +970,8 @@ private suspend fun approveProposal(
                         "${courseCode.firstOrNull { it.isDigit() } ?: '2'}00"
                     },
                     masterUrl = fileUrl(firstItem.fileId),
+                    fileId = firstItem.fileId,
+                    md5Checksum = md5,
                     label = "$resourceLabel for $courseCode",
                     submittedBy = proposal.submittedBy,
                     notes = finalNotes
