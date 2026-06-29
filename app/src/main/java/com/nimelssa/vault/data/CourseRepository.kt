@@ -12,7 +12,7 @@ import kotlinx.coroutines.tasks.await
  *
  * Collection: `courses/{courseCode}`
  *
- * On first launch (empty collection), seeds with 56 standard MLS courses across 100-400 levels.
+ * On first launch (empty collection), seeds with 58 standard courses across 100-400 levels.
  * After seeding, all mutations go through this repository to keep
  * Firestore and in-memory cache in sync.
  */
@@ -125,6 +125,7 @@ object CourseRepository {
             Course("PHY 101",  "General Physics I",              "PHYSICS",              "100", 1, 70),
             Course("PHY 107",  "Practical Physics I",            "PHYSICS",              "100", 1, 55),
             Course("MLS 101",  "Intro to Medical Lab Science",   "MEDICAL LABORATORY SCIENCE", "100", 1, 50),
+            Course("MLS 107",  "Practical MLS I",                "MEDICAL LABORATORY SCIENCE", "100", 1, 48),
             Course("GST 101",  "Use of English I",               "GENERAL STUDIES",      "100", 1, 85),
             Course("GST 111",  "Logic, Philosophy & Existence",  "GENERAL STUDIES",      "100", 1, 70),
 
@@ -136,6 +137,7 @@ object CourseRepository {
             Course("PHY 102",  "General Physics II",             "PHYSICS",              "100", 2, 68),
             Course("PHY 108",  "Practical Physics II",           "PHYSICS",              "100", 2, 52),
             Course("MLS 102",  "Elementary Lab Techniques",      "MEDICAL LABORATORY SCIENCE", "100", 2, 45),
+            Course("MLS 108",  "Practical MLS II",               "MEDICAL LABORATORY SCIENCE", "100", 2, 46),
             Course("GST 102",  "Use of English II",              "GENERAL STUDIES",      "100", 2, 82),
             Course("GST 122",  "Nigerian Peoples & Culture",     "GENERAL STUDIES",      "100", 2, 75),
 

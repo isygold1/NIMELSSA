@@ -36,7 +36,7 @@ class NimelssaApp : Application() {
         // 2. Initialise the offline file manager
         OfflineManager.init(this)
 
-        // 3. Load course metadata from Firestore (seeds 54 MLS courses if empty)
+        // 3. Load course metadata from Firestore (seeds 58 courses if empty)
         appScope.launch {
             CourseRepository.loadAll()
         }
