@@ -7,6 +7,7 @@ import android.util.Log
 import com.nimelssa.vault.data.Resource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
@@ -27,7 +28,7 @@ object OfflineManager {
     private const val TAG = "OfflineManager"
     private const val PREFS_NAME = "offline_courses"
     private const val KEY_OFFLINE_CODES = "saved_codes"
-    private const val KEY_ACCESS_TIMES = "access_times"
+    private const val KEY_ACCESS_TIMES = "access_times_json"
 
     /** Maximum disk space for offline course files (300 MB). */
     private const val MAX_CACHE_BYTES = 300L * 1024 * 1024
@@ -80,8 +81,7 @@ object OfflineManager {
         times.remove(courseCode)
         prefs?.edit()
             ?.putStringSet(KEY_OFFLINE_CODES, codes)
-            ?.putStringSet(KEY_ACCESS_TIMES, times.entries.joinToString("\n") { "${it.key}=${it.value}" }
-                .takeIf { it.isNotEmpty() }?.split("\n")?.toSet() ?: emptySet())
+            ?.putString(KEY_ACCESS_TIMES, mapToJson(times))
             ?.apply()
 
         Log.d(TAG, "Removed offline: $courseCode")
@@ -124,7 +124,7 @@ object OfflineManager {
         cacheBase?.mkdirs()
         prefs?.edit()
             ?.putStringSet(KEY_OFFLINE_CODES, emptySet())
-            ?.putStringSet(KEY_ACCESS_TIMES, emptySet())
+            ?.putString(KEY_ACCESS_TIMES, null)
             ?.apply()
         Log.d(TAG, "Cleared all offline data")
     }
@@ -240,19 +240,29 @@ object OfflineManager {
         val times = getAccessTimes().toMutableMap()
         times[courseCode] = System.currentTimeMillis()
         prefs?.edit()
-            ?.putStringSet(KEY_ACCESS_TIMES,
-                times.entries.joinToString("\n") { "${it.key}=${it.value}" }
-                    .split("\n").toSet())
+            ?.putString(KEY_ACCESS_TIMES, mapToJson(times))
             ?.apply()
     }
 
     /** Read the stored access-time map. */
     private fun getAccessTimes(): Map<String, Long> {
-        val raw = prefs?.getStringSet(KEY_ACCESS_TIMES, emptySet()) ?: emptySet()
-        return raw.mapNotNull { line ->
-            val parts = line.split("=", limit = 2)
-            if (parts.size == 2) parts[0] to (parts[1].toLongOrNull() ?: 0L) else null
-        }.toMap()
+        val raw = prefs?.getString(KEY_ACCESS_TIMES, null) ?: return emptyMap()
+        return jsonToMap(raw)
+    }
+
+    /** Serialise a map to a JSON string. */
+    private fun mapToJson(map: Map<String, Long>): String {
+        return JSONObject(map as Map<*, *>).toString()
+    }
+
+    /** Deserialise a JSON string back to a map. */
+    private fun jsonToMap(json: String): Map<String, Long> {
+        val obj = JSONObject(json)
+        val map = mutableMapOf<String, Long>()
+        for (key in obj.keys()) {
+            map[key] = obj.optLong(key, 0L)
+        }
+        return map
     }
 
     private fun bytesToMb(bytes: Long): String = String.format("%.1f", bytes / (1024.0 * 1024.0))
