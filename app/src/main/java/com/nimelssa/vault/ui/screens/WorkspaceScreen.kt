@@ -99,7 +99,7 @@ fun WorkspaceScreen(
                         )
                     ) {
                         Text(
-                            text = "• ${prop.resourceType} — ${prop.courseCode}",
+                            text = "• ${prop.targetLevel}L — ${prop.notes.ifBlank { prop.driveLink.take(40) }}",
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(12.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
