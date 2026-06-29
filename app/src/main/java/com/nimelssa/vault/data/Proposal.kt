@@ -13,6 +13,7 @@ data class Proposal(
     val submittedAt: Long = System.currentTimeMillis(),
     val driveLink: String = "",             // the Google Drive link (file or folder)
     val notes: String = "",
+    val semester: Int = 1,                  // 1st or 2nd semester
     val targetLevel: String = "",           // the level this concerns (e.g. "200"); rep sees proposals where targetLevel == their repLevel
     val status: String = "pending",         // pending / approved / rejected
     val aiPreview: AiPreview? = null,       // populated after AI scan

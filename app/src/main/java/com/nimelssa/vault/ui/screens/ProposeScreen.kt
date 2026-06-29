@@ -1,6 +1,9 @@
 package com.nimelssa.vault.ui.screens
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -18,12 +20,15 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,11 +61,13 @@ fun ProposeScreen(
     }
     var targetLevel by remember { mutableStateOf(defaultLevel) }
     var levelExpanded by remember { mutableStateOf(false) }
+    // Auto-detect semester from current month (Jan–Jun = 1st, Jul–Dec = 2nd)
+    var selectedSemester by remember { mutableIntStateOf(
+        if (java.util.Calendar.getInstance().get(java.util.Calendar.MONTH) < 6) 1 else 2
+    ) }
     var message by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    // Auto-detect semester from current month
-    val autoSemester = if (java.util.Calendar.getInstance().get(java.util.Calendar.MONTH) < 6) 1 else 2
 
     Column(
         modifier = modifier
@@ -171,12 +178,32 @@ fun ProposeScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // ── Semester selector (auto-filled from current month) ──
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = selectedSemester == 1,
+                onClick = { selectedSemester = 1 },
+                label = { Text("1st Semester") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            )
+            FilterChip(
+                selected = selectedSemester == 2,
+                onClick = { selectedSemester = 2 },
+                label = { Text("2nd Semester") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            )
+        }
         Text(
-            text = "📅 Auto-detected: ${autoSemester}${if (autoSemester == 1) "st" else "nd"} Semester (${if (autoSemester == 1) "Jan-Jun" else "Jul-Dec"})",
+            text = "📅 Auto-filled from current month",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 4.dp)
+            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -238,12 +265,14 @@ fun ProposeScreen(
                             notes = notes.trim(),
                             submittedBy = user.email,
                             submittedByName = user.name,
-                            targetLevel = targetLevel
+                            targetLevel = targetLevel,
+                            semester = selectedSemester
                         )
                         message = "✅ Proposal submitted! The ${targetLevel}L rep will review it."
                         driveLink = ""
                         notes = ""
                         targetLevel = ""
+                        selectedSemester = 1
                         onProposed()
                     } catch (e: Exception) {
                         message = "❌ Failed to submit: ${e.localizedMessage}"

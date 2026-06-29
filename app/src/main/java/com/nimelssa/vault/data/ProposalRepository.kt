@@ -47,7 +47,8 @@ object ProposalRepository {
         notes: String,
         submittedBy: String,
         submittedByName: String,
-        targetLevel: String = ""
+        targetLevel: String = "",
+        semester: Int = 1
     ): String {
         val proposal = Proposal(
             id = "",  // Firestore will generate
@@ -56,6 +57,7 @@ object ProposalRepository {
             submittedAt = System.currentTimeMillis(),
             driveLink = driveLink,
             notes = notes,
+            semester = semester,
             targetLevel = targetLevel,
             status = "pending"
         )
