@@ -273,10 +273,23 @@ private fun ResourceListView(
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(
-                    text = "📥 Available offline — files saved to device",
+                    text = "📥 Available offline",
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF166534)
+                )
+            }
+        } else {
+            // Show storage info when not saved
+            val usedMb = OfflineManager.getUsedBytes() / (1024 * 1024)
+            val maxMb = OfflineManager.getMaxBytes() / (1024 * 1024)
+            if (usedMb > 0) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "💾 Offline storage: ${usedMb}MB / ${maxMb}MB used",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }
         }
