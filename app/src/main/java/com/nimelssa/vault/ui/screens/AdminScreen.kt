@@ -880,7 +880,9 @@ private suspend fun approveProposal(
     manualAssignments: Map<String, ManualAssignment> = emptyMap()
 ) {
     val preview = proposal.aiPreview ?: return
-    val masterFolderUrl = proposal.driveLink
+
+    // Build individual file URL from Drive file ID
+    fun fileUrl(fileId: String) = "https://drive.google.com/file/d/$fileId/view"
 
     // ── 1. Convert manual assignments to AiMatchedItem ──
     val manualMatched = manualAssignments.values.map { assignment ->
@@ -922,7 +924,7 @@ private suspend fun approveProposal(
                 courseCode = "",
                 resourceType = "TB",
                 level = tb.level.ifBlank { "200" },
-                masterUrl = masterFolderUrl,
+                masterUrl = fileUrl(tb.fileId),
                 label = tb.fileName.removeSuffix(".pdf").removeSuffix(".PDF")
                     .replace("_", " ").replace("-", " ").trim(),
                 submittedBy = proposal.submittedBy,
@@ -963,7 +965,7 @@ private suspend fun approveProposal(
                     level = firstItem.level.ifBlank {
                         "${courseCode.firstOrNull { it.isDigit() } ?: '2'}00"
                     },
-                    masterUrl = masterFolderUrl,
+                    masterUrl = fileUrl(firstItem.fileId),
                     label = "$resourceLabel for $courseCode",
                     submittedBy = proposal.submittedBy,
                     notes = finalNotes
