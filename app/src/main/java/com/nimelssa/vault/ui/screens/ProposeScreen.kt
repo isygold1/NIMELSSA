@@ -61,9 +61,12 @@ fun ProposeScreen(
     }
     var targetLevel by remember { mutableStateOf(defaultLevel) }
     var levelExpanded by remember { mutableStateOf(false) }
-    // Auto-detect semester from current month (Jan–Jun = 1st, Jul–Dec = 2nd)
+    // Auto-detect semester from current month (Unilorin calendar)
+    // 1st sem: Oct–Feb (MONTH >= 9 || MONTH <= 1), 2nd sem: Mar–Jul (MONTH in 2..6)
     var selectedSemester by remember { mutableIntStateOf(
-        if (java.util.Calendar.getInstance().get(java.util.Calendar.MONTH) < 6) 1 else 2
+        with (java.util.Calendar.getInstance().get(java.util.Calendar.MONTH)) {
+            if (this >= 9 || this <= 1) 1 else 2
+        }
     ) }
     var message by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
@@ -200,7 +203,7 @@ fun ProposeScreen(
             )
         }
         Text(
-            text = "📅 Auto-filled from current month",
+            text = "📅 Auto-filled from current month (Unilorin: Oct–Feb = 1st, Mar–Jul = 2nd)",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, top = 2.dp)
