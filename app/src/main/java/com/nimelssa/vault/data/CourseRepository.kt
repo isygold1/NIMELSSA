@@ -46,8 +46,9 @@ object CourseRepository {
             Log.d(TAG, "Loaded ${_courses.value.size} courses from Firestore")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load courses from Firestore", e)
-            // Fallback to empty list — user can add courses via AdminScreen
-            _courses.value = emptyList()
+            // Fallback to in-memory default list so workspace is never empty
+            _courses.value = getDefaultCourses()
+            Log.d(TAG, "Using ${_courses.value.size} default courses as fallback")
         }
     }
 
@@ -115,8 +116,8 @@ object CourseRepository {
 
     // ── Seeding ──
 
-    private suspend fun seedDefaultCourses() {
-        val defaults = listOf(
+    /** Returns the hardcoded list of default courses. Used for both seeding and Firestore fallback. */
+    private fun getDefaultCourses(): List<Course> = listOf(
             // 100 LEVEL — 1st Semester
             Course("BIO 101",  "General Biology I",              "BIOLOGY",              "100", 1, 80),
             Course("BIO 107",  "Practical Biology I",            "BIOLOGY",              "100", 1, 65),
@@ -192,7 +193,9 @@ object CourseRepository {
             Course("MLS 452",  "Health Mgmt & Lab Ethics",       "MEDICAL LABORATORY SCIENCE", "400", 2, 40),
         )
 
-        // Batch write
+    /** Write the default courses to Firestore (called when collection is empty). */
+    private suspend fun seedDefaultCourses() {
+        val defaults = getDefaultCourses()
         val batch = firestore.batch()
         for (course in defaults) {
             val ref = firestore.collection(COLLECTION).document(course.code)
