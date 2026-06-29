@@ -59,8 +59,9 @@ fun WorkspaceScreen(
     var pendingExpanded by remember { mutableStateOf(false) }
     val levels = Levels.ALL
 
-    val courses = CourseRepository.getFiltered(selectedLevel, selectedSemester)
-    val categories = CourseRepository.getCategories(selectedLevel, selectedSemester)
+    val allCourses by CourseRepository.courses.collectAsState()
+    val courses = allCourses.filter { it.level == selectedLevel && it.semester == selectedSemester }
+    val categories = courses.map { it.category }.distinct()
     val resourceMap by ResourceRepository.resources.collectAsState()
     val levelTextbooks = ResourceRepository.getLevelTextbooks(selectedLevel)
 
