@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AdminScreen(
     repLevel: String,
-    onPreview: (Course) -> Unit = {},
+    onPreview: (Course, String?) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val user by UserSession.state.collectAsState()
@@ -103,13 +103,17 @@ fun AdminScreen(
                         scope.launch {
                             try {
                                 ProposalRepository.approveProposal(proposal, user.uid)
-                                // Merge into local CourseRepository so Workspace updates immediately
-                                CourseRepository.mergeCourseResources(
-                                    code = proposal.courseCode,
-                                    lectureNotesUrl = if (proposal.type == "Lecture Notes") proposal.driveUrl else "",
-                                    pastQuestionsUrl = if (proposal.type == "Past Questions") proposal.driveUrl else "",
-                                    submittedBy = proposal.submittedByName,
-                                    notes = proposal.notes
+                                // WHY: addCourse is idempotent — uses courseCode as doc ID
+                                // so approving the same course twice just updates it
+                                CourseRepository.addCourse(
+                                    Course(
+                                        code = proposal.courseCode,
+                                        name = proposal.courseName.ifBlank { proposal.courseCode },
+                                        category = proposal.category.ifBlank { "MEDICAL LABORATORY SCIENCE" },
+                                        level = proposal.level,
+                                        semester = proposal.semester,
+                                        progress = 0
+                                    )
                                 )
                             } catch (e: Exception) {
                                 android.util.Log.e("AdminScreen", "Approve failed", e)
@@ -322,9 +326,8 @@ private fun CourseManageRow(course: Course, canDelete: Boolean) {
                     text = "🗑️",
                     modifier = Modifier.clickable {
                         scope.launch {
-                            FirestoreCourseSync.removeResources(course.code)
+                            CourseRepository.removeCourse(course.code)
                         }
-                        CourseRepository.removeCourse(course.code)
                     }
                 )
             }
@@ -412,8 +415,12 @@ private fun AddCourseForm(
             Button(
                 onClick = {
                     if (code.isNotBlank() && name.isNotBlank()) {
-                        CourseRepository.addCourse(Course(code, name, category.ifBlank { "GENERAL" }, level, semester, 0))
-                        onAdded()
+                        scope.launch {
+                            CourseRepository.addCourse(
+                                Course(code, name, category.ifBlank { "GENERAL" }, level, semester, 0)
+                            )
+                            onAdded()
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),

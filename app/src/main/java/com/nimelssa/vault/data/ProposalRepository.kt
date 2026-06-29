@@ -30,6 +30,18 @@ object ProposalRepository {
      * Real-time stream of pending proposals for a given level.
      * Pass level = null to get ALL levels (admin use).
      */
+    /**
+     * No-op stub called by NimelssaApp on startup.
+     * ProposalRepository uses real-time Firestore listeners (pendingProposals Flow)
+     * rather than a one-shot load, so no pre-loading is needed here.
+     */
+    suspend fun loadAll() {
+        // WHY: Intentionally empty. Proposals are loaded on-demand via
+        // pendingProposals(level) which returns a live Flow. This stub
+        // exists only to satisfy the NimelssaApp.onCreate() call.
+        Log.d(TAG, "ProposalRepository.loadAll() — no-op, using live listeners")
+    }
+
     fun pendingProposals(level: String?): Flow<List<Proposal>> = callbackFlow {
         var query: Query = db.collection(COLLECTION)
             .whereEqualTo("status", "pending")
