@@ -283,50 +283,6 @@ private fun ResourceListView(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ── Prominent offline save banner ──
-        if (isOnline && resources.isNotEmpty() && course.code !in OfflineManager.getSavedCodes()) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE0F2FE))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "📥 Save for offline access",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF075985)
-                        )
-                        Text(
-                            text = "Open without internet anytime",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF075985)
-                        )
-                    }
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                OfflineManager.saveOfflineResources(course.code, resources)
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF0369A1)
-                        ),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("Save All", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
         Text(
             text = "📚 Available Resources",
             style = MaterialTheme.typography.titleSmall,
