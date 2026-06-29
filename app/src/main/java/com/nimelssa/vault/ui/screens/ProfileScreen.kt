@@ -151,38 +151,6 @@ fun ProfileScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Institution info
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFFF0FDFA)
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "🏛️ Institution Details",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0F766E)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    DetailRow(label = "Institution", value = "NIMELSSA Southwest Region")
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        color = Color(0xFF0F766E).copy(alpha = 0.2f)
-                    )
-                    DetailRow(label = "Chapter", value = "LAUTECH Chapter")
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        color = Color(0xFF0F766E).copy(alpha = 0.2f)
-                    )
-                    DetailRow(label = "Membership ID", value = "NMSW/MLS/24/0001")
-                }
-            }
-
             Spacer(modifier = Modifier.height(24.dp))
 
             // ── Danger zone ──
