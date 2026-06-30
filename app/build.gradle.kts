@@ -20,6 +20,15 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../nimelssa-release.keystore")
+            storePassword = "Nimelssa2026"
+            keyAlias = "nimelssa"
+            keyPassword = "Nimelssa2026"
+        }
+    }
+
     buildTypes {
         debug {
             isDebuggable = true
@@ -31,15 +40,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-        }
-    }
-
-    signingConfigs {
-        create("release") {
-            storeFile = file("../nimelssa-release.keystore")
-            storePassword = "Nimelssa2026"
-            keyAlias = "nimelssa"
-            keyPassword = "Nimelssa2026"
         }
     }
 
