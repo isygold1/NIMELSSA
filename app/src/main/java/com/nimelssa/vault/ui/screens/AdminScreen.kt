@@ -1014,8 +1014,7 @@ private suspend fun approveProposal(
                     name = firstItem.courseName,
                     category = inferCategory(courseCode),
                     level = inferredLevel,
-                    semester = firstItem.semester,
-                    progress = 0
+                    semester = firstItem.semester
                 )
             )
         }
@@ -1282,7 +1281,7 @@ private fun AddCourseForm(
                     if (code.isNotBlank() && name.isNotBlank()) {
                         scope.launch {
                             CourseRepository.addCourse(
-                                Course(code, name, category.ifBlank { "GENERAL" }, level, semester, 0)
+                                Course(code, name, category.ifBlank { "GENERAL" }, level, semester)
                             )
                             onAdded()
                         }
