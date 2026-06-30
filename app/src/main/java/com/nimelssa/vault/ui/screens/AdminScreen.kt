@@ -93,8 +93,9 @@ fun AdminScreen(
     val user by UserSession.state.collectAsState()
     val isAdmin = user.role == UserRole.ADMIN
     val canManage = isAdmin || user.role == UserRole.REP
-    val allCourses by CourseRepository.courses.collectAsState()
+        val allCourses by CourseRepository.courses.collectAsState()
     val proposals by ProposalRepository.proposals.collectAsState()
+    val resourceMap by ResourceRepository.resources.collectAsState()
 
     val scope = rememberCoroutineScope()
     var showAddForm by remember { mutableStateOf(false) }
@@ -224,8 +225,11 @@ fun AdminScreen(
 
         val displayCourses = if (isAdmin) allCourses
                              else allCourses.filter { it.level == repLevel }
+        val coursesWithResources = displayCourses.filter { course ->
+            resourceMap.containsKey(course.code) && resourceMap[course.code]!!.isNotEmpty()
+        }
 
-        displayCourses.forEach { course ->
+        coursesWithResources.forEach { course ->
             CourseManageRow(
                 course = course,
                 canDelete = isAdmin || course.level == repLevel,
