@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── USERS ──
+    // Each user can only read/write their own profile document.
+    // The app uses this for display name, email, role, level.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ── EVERYTHING ELSE ──
+    // Courses, resources, proposals, reports, level_textbooks, course_resources:
+    // Any authenticated user can read/write. Role-based enforcement is handled
+    // at the app layer (UI visibility, navigation guards, API call restrictions).
+    //
+    // Rationale:
+    //   - Firebase custom claims (request.auth.token.role) are NOT used — roles
+    //     are stored in /users/{uid} documents, which would require a `get()`
+    //     call in every rule, adding latency and cost.
+    //   - The app already restricts admin/rep screens behind UserRole checks
+    //     and never exposes write capabilities to students outside ProposeScreen.
+    //   - This keeps rules simple, fast, and auditable.
+    //
+    // Future improvement: If tighter rules are needed, add Firestore `get()`
+    // calls here to read /users/{request.auth.uid} and check the role field.
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
