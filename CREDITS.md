@@ -45,11 +45,7 @@ https://firebase.google.com
 
 ---
 
-## AI & APIs
-
-**Groq API** (llama-3.3-70b-versatile)
-Used for Drive link auto-classification during resource proposal.
-https://groq.com
+## APIs
 
 **Google Drive API v3**
 Used for folder scanning, file metadata retrieval, and MD5 checksum
