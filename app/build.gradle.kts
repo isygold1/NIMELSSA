@@ -26,10 +26,20 @@ android {
         }
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("../nimelssa-release.keystore")
+            storePassword = "Nimelssa2026"
+            keyAlias = "nimelssa"
+            keyPassword = "Nimelssa2026"
         }
     }
 
