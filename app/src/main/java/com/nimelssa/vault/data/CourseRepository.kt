@@ -122,16 +122,16 @@ object CourseRepository {
     /** Returns the hardcoded list of default courses. Used for both seeding and Firestore fallback. */
     private fun getDefaultCourses(): List<Course> = listOf(
             // 100 LEVEL — 1st Semester
-            Course("BIO 101",  "General Biology I",              "BIOLOGY",              "100"),
-            Course("BIO 107",  "Practical Biology I",            "BIOLOGY",              "100"),
-            Course("CHM 101",  "General Chemistry I",            "CHEMISTRY",            "100"),
-            Course("CHM 107",  "Practical Chemistry I",          "CHEMISTRY",            "100"),
-            Course("PHY 101",  "General Physics I",              "PHYSICS",              "100"),
-            Course("PHY 107",  "Practical Physics I",            "PHYSICS",              "100"),
-            Course("MLS 101",  "Intro to Medical Lab Science",   "MEDICAL LABORATORY SCIENCE", "100"),
-            Course("MLS 107",  "Practical MLS I",                "MEDICAL LABORATORY SCIENCE", "100"),
-            Course("GST 101",  "Use of English I",               "GENERAL STUDIES",      "100"),
-            Course("GST 111",  "Logic, Philosophy & Existence",  "GENERAL STUDIES",      "100"),
+            Course("BIO 101",  "General Biology I",              "BIOLOGY",              "100", 1),
+            Course("BIO 107",  "Practical Biology I",            "BIOLOGY",              "100", 1),
+            Course("CHM 101",  "General Chemistry I",            "CHEMISTRY",            "100", 1),
+            Course("CHM 107",  "Practical Chemistry I",          "CHEMISTRY",            "100", 1),
+            Course("PHY 101",  "General Physics I",              "PHYSICS",              "100", 1),
+            Course("PHY 107",  "Practical Physics I",            "PHYSICS",              "100", 1),
+            Course("MLS 101",  "Intro to Medical Lab Science",   "MEDICAL LABORATORY SCIENCE", "100", 1),
+            Course("MLS 107",  "Practical MLS I",                "MEDICAL LABORATORY SCIENCE", "100", 1),
+            Course("GST 101",  "Use of English I",               "GENERAL STUDIES",      "100", 1),
+            Course("GST 111",  "Logic, Philosophy & Existence",  "GENERAL STUDIES",      "100", 1),
 
             // 100 LEVEL — 2nd Semester
             Course("BIO 102",  "General Biology II",             "BIOLOGY",              "100", 2),
