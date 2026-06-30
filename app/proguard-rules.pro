@@ -23,3 +23,9 @@
 # ── Keep Firebase components ──────────────────────────────────────────────
 -keep class com.google.firebase.** { *; }
 -dontwarn com.google.firebase.**
+
+# ── Firebase Crashlytics ──────────────────────────────────────────────────
+# Keep source file names and line numbers so stack traces are readable
+-keepattributes SourceFile,LineNumberTable
+# Keep the mapping file so deobfuscation works in Firebase Console
+-keep class com.google.firebase.crashlytics.** { *; }
