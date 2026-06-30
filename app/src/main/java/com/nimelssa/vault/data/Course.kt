@@ -12,8 +12,7 @@ data class Course(
     val name: String = "",
     val category: String = "",
     val level: String = "",
-    val semester: Int = 1,
-    val progress: Int = 0
+    val semester: Int = 1
 ) {
     val displayLevel: String get() = "${level} Level"
     val displaySemester: String get() = if (semester == 1) "1st Semester" else "2nd Semester"
