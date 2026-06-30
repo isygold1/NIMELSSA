@@ -76,6 +76,30 @@ fun ProposeScreen(
     var pendingLink by remember { mutableStateOf("") }   // Drive link being checked for duplicates
     val scope = rememberCoroutineScope()
 
+    // Shared submit logic (lambda, not local fun — valid Kotlin)
+    val submitProposal: suspend (String) -> Unit = { link ->
+        try {
+            ProposalRepository.submit(
+                driveLink = link,
+                notes = notes.trim(),
+                submittedBy = user.email,
+                submittedByName = user.name,
+                targetLevel = targetLevel,
+                semester = selectedSemester
+            )
+            message = "✅ Proposal submitted! The ${targetLevel}L rep will review it."
+            driveLink = ""
+            notes = ""
+            targetLevel = ""
+            selectedSemester = 1
+            onProposed()
+        } catch (e: Exception) {
+            message = "❌ Failed to submit: ${e.localizedMessage}"
+        } finally {
+            isLoading = false
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -378,29 +402,4 @@ fun ProposeScreen(
                 fontWeight = FontWeight.Bold
             )
         }
-    }
-
-    // ── Shared submit logic ──
-    suspend fun submitProposal(link: String) {
-        try {
-            ProposalRepository.submit(
-                driveLink = link,
-                notes = notes.trim(),
-                submittedBy = user.email,
-                submittedByName = user.name,
-                targetLevel = targetLevel,
-                semester = selectedSemester
-            )
-            message = "✅ Proposal submitted! The ${targetLevel}L rep will review it."
-            driveLink = ""
-            notes = ""
-            targetLevel = ""
-            selectedSemester = 1
-            onProposed()
-        } catch (e: Exception) {
-            message = "❌ Failed to submit: ${e.localizedMessage}"
-        } finally {
-            isLoading = false
-        }
-    }
-}
+    }}
