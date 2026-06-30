@@ -43,17 +43,30 @@ object CourseRepository {
                 }
             }
 
-            // ── One-time migration: fix MLS 108 semester if stale ──
+            // ── One-time migration: fix semester-2 courses that were stored with
+            //    semester=1 by the old seed (which omitted the semester arg, defaulting to 1).
+            //    Affected: all 100-level 2nd-semester courses + any others from old seed.
+            val semester2Codes = setOf(
+                // 100 LEVEL — 2nd Semester
+                "BIO 102", "BIO 108", "CHM 102", "CHM 108",
+                "PHY 102", "PHY 108", "MLS 102", "MLS 108",
+                "GST 102", "GST 122"
+            )
+            val correctedCourses = mutableListOf<Course>()
             _courses.value = _courses.value.map { course ->
-                if (course.code == "MLS 108" && course.semester != 2) course.copy(semester = 2)
-                else course
+                if (course.code in semester2Codes && course.semester != 2) {
+                    val fixed = course.copy(semester = 2)
+                    correctedCourses.add(fixed)
+                    fixed
+                } else course
             }
 
-            // Re-sync corrected courses to Firestore
-            val mls108 = _courses.value.find { it.code == "MLS 108" }
-            if (mls108 != null) {
-                firestore.collection(COLLECTION).document("MLS 108")
-                    .set(mls108)
+            // Re-sync all corrected courses to Firestore
+            for (fixed in correctedCourses) {
+                firestore.collection(COLLECTION).document(fixed.code).set(fixed)
+            }
+            if (correctedCourses.isNotEmpty()) {
+                Log.d(TAG, "Fixed semester for ${correctedCourses.size} courses: ${correctedCourses.joinToString { it.code }}")
             }
 
             Log.d(TAG, "Loaded ${_courses.value.size} courses from Firestore")
