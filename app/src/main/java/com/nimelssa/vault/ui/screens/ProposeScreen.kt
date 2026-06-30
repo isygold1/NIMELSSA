@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import android.util.Log
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -74,6 +75,7 @@ fun ProposeScreen(
     var isLoading by remember { mutableStateOf(false) }
     var duplicateWarning by remember { mutableStateOf<String?>(null) }
     var pendingLink by remember { mutableStateOf("") }   // Drive link being checked for duplicates
+    var isSubmitting by remember { mutableStateOf(false) } // guard against double-tap
     val scope = rememberCoroutineScope()
 
     // Shared submit logic (lambda, not local fun — valid Kotlin)
@@ -97,6 +99,7 @@ fun ProposeScreen(
             message = "❌ Failed to submit: ${e.localizedMessage}"
         } finally {
             isLoading = false
+            isSubmitting = false
         }
     }
 
@@ -336,6 +339,8 @@ fun ProposeScreen(
                     return@Button
                 }
 
+                if (isSubmitting) return@Button // guard against double-tap
+                isSubmitting = true
                 message = null
                 isLoading = true
 
@@ -357,11 +362,13 @@ fun ProposeScreen(
                         ) {
                             val course = if (existingByFileId.courseCode.isNotBlank())
                                 " in ${existingByFileId.courseCode}" else ""
+                            Log.d("ProposeScreen", "Updated version detected for fileId=$fileId")
                             duplicateWarning = "🔄 Updated version of existing ${existingByFileId.resourceLabel}" +
                                     "$course detected.\n" +
                                     "The file on Google Drive has changed since it was last approved.\n\n" +
                                     "Submit to flag this update for the rep's review?"
                             isLoading = false
+                            isSubmitting = false
                             return@launch
                         }
                     }
@@ -376,10 +383,12 @@ fun ProposeScreen(
                                 val c = if (r.courseCode.isNotBlank()) " in ${r.courseCode}" else ""
                                 "📄 ${r.resourceLabel}$c"
                             }
+                            Log.d("ProposeScreen", "Exact duplicate found for md5=$md5")
                             duplicateWarning = "⚠️ This file is identical (MD5 match) to ${
                                 matches.size
                             } existing resource(s):\n$matchInfo\n\nSubmit anyway if this is an update?"
                             isLoading = false
+                            isSubmitting = false
                             return@launch
                         }
                     }
