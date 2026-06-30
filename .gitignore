@@ -23,5 +23,9 @@ captures/
 *.aab
 *.ap_
 
+# Keystore — never commit, back up to Google Drive manually
+*.keystore
+*.jks
+
 # Temp
 *.tmp
