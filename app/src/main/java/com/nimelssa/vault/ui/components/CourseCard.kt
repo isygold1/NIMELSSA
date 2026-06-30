@@ -37,6 +37,16 @@ fun CourseCard(
     val hasTb = resources.any { it.resourceType == "TB" }
     val hasAny = hasNotes || hasPqs || hasTb
 
+    // ── Compute honest progress from available resource types ──
+    // For a regular course: % of the 3 resource types (LN/PQ/TB) available.
+    // For level textbooks (special card): 100% if any exist, else 0%.
+    val displayProgress = if (!hasAny) 0
+        else if (course.code == "TEXTBOOK") 100
+        else {
+            val presentTypes = listOf(hasNotes, hasPqs, hasTb).count { it }
+            (presentTypes * 100) / 3
+        }
+
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
@@ -73,7 +83,7 @@ fun CourseCard(
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                RadialProgress(percentage = course.progress)
+                RadialProgress(percentage = displayProgress)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
