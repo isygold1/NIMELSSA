@@ -324,6 +324,25 @@ fun ProposeScreen(
                         md5 = DriveScanner.getFileMd5(fileId) ?: ""
                     }
 
+                    // Check 1: Same fileId but different MD5 → updated version
+                    if (fileId != null) {
+                        val existingByFileId = ResourceRepository.findByFileId(fileId)
+                        if (existingByFileId != null && md5.isNotBlank() &&
+                            existingByFileId.md5Checksum.isNotBlank() &&
+                            existingByFileId.md5Checksum != md5
+                        ) {
+                            val course = if (existingByFileId.courseCode.isNotBlank())
+                                " in ${existingByFileId.courseCode}" else ""
+                            duplicateWarning = "🔄 Updated version of existing ${existingByFileId.resourceLabel}" +
+                                    "$course detected.\n" +
+                                    "The file on Google Drive has changed since it was last approved.\n\n" +
+                                    "Submit to flag this update for the rep's review?"
+                            isLoading = false
+                            return@launch
+                        }
+                    }
+
+                    // Check 2: Same MD5 → exact duplicate
                     if (md5.isNotBlank()) {
                         val matches = ResourceRepository.allResources
                             .filter { it.md5Checksum == md5 && it.md5Checksum.isNotBlank() }
@@ -333,7 +352,7 @@ fun ProposeScreen(
                                 val c = if (r.courseCode.isNotBlank()) " in ${r.courseCode}" else ""
                                 "📄 ${r.resourceLabel}$c"
                             }
-                            duplicateWarning = "This file is identical (MD5 match) to ${
+                            duplicateWarning = "⚠️ This file is identical (MD5 match) to ${
                                 matches.size
                             } existing resource(s):\n$matchInfo\n\nSubmit anyway if this is an update?"
                             isLoading = false

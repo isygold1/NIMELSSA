@@ -297,6 +297,27 @@ private fun ProposalCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // ── Updated-version flag ──
+            val existingByFileId = DriveScanner.extractFileId(proposal.driveLink)
+                ?.let { ResourceRepository.findByFileId(it) }
+            if (existingByFileId != null && existingByFileId.md5Checksum.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3CD).copy(alpha = 0.2f)),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = "🔄 Updated version of ${existingByFileId.resourceLabel}" +
+                                if (existingByFileId.courseCode.isNotBlank())
+                                    " in ${existingByFileId.courseCode}" else "",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFFFD54F),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
             // ── Scan section ──
             if (!hasScanned && !isScanning) {
                 Button(
