@@ -278,37 +278,79 @@ object UserSession {
             }
     }
 
-    // ───── UPDATE EMAIL ───────────────────────────────────────────────────
+    // ───── RE-AUTHENTICATE ───────────────────────────────────────────────
 
-    fun updateEmail(newEmail: String, onResult: (Boolean, String?) -> Unit) {
+    /**
+     * Re-authenticates the user with their current password.
+     * Call this before sensitive operations like email/password changes.
+     */
+    fun reauthenticateUser(password: String, onResult: (Boolean, String?) -> Unit) {
         val user = auth.currentUser ?: run {
             onResult(false, "No authenticated user")
             return
         }
 
-        user.updateEmail(newEmail)
+        val credential = EmailAuthProvider.getCredential(user.email!!, password)
+        user.reauthenticate(credential)
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
-                    // Also update Firestore
-                    firestore.collection("users").document(user.uid)
-                        .update("email", newEmail)
-                        .addOnCompleteListener { firestoreTask ->
-                            if (firestoreTask.isSuccessful) {
-                                _state.value = _state.value.copy(email = newEmail)
-                                onResult(true, null)
-                                Log.d(TAG, "Email updated to: $newEmail")
-                            } else {
-                                val msg = firestoreTask.exception?.message
-                                    ?: "Firestore email update failed"
-                                onResult(false, msg)
-                                Log.e(TAG, "Firestore email update failed: $msg")
-                            }
-                        }
+                    Log.d(TAG, "Re-authentication successful")
+                    onResult(true, null)
                 } else {
-                    val msg = task.exception?.message ?: "Email update failed"
+                    val msg = task.exception?.message ?: "Re-authentication failed"
                     onResult(false, msg)
-                    Log.e(TAG, "Firebase Auth email update failed: $msg")
+                    Log.e(TAG, "Re-authentication failed: $msg")
                 }
             }
+    }
+
+    // ───── UPDATE EMAIL (with re-auth) ───────────────────────────────────
+
+    /**
+     * Re-authenticates the user first, then updates email in Firebase Auth
+     * and Firestore. This avoids the "requires recent authentication" error.
+     */
+    fun reauthenticateAndUpdateEmail(
+        password: String,
+        newEmail: String,
+        onResult: (Boolean, String?) -> Unit
+    ) {
+        reauthenticateUser(password) { reauthSuccess, reauthMsg ->
+            if (!reauthSuccess) {
+                onResult(false, reauthMsg ?: "Re-authentication failed. Please check your password.")
+                return@reauthenticateUser
+            }
+
+            // Re-auth succeeded — now update the email
+            val user = auth.currentUser ?: run {
+                onResult(false, "No authenticated user")
+                return@reauthenticateUser
+            }
+
+            user.updateEmail(newEmail)
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        // Also update Firestore
+                        firestore.collection("users").document(user.uid)
+                            .update("email", newEmail)
+                            .addOnCompleteListener { firestoreTask ->
+                                if (firestoreTask.isSuccessful) {
+                                    _state.value = _state.value.copy(email = newEmail)
+                                    onResult(true, null)
+                                    Log.d(TAG, "Email updated to: $newEmail")
+                                } else {
+                                    val msg = firestoreTask.exception?.message
+                                        ?: "Firestore email update failed"
+                                    onResult(false, msg)
+                                    Log.e(TAG, "Firestore email update failed: $msg")
+                                }
+                            }
+                    } else {
+                        val msg = task.exception?.message ?: "Email update failed"
+                        onResult(false, msg)
+                        Log.e(TAG, "Firebase Auth email update failed: $msg")
+                    }
+                }
+        }
     }
 }

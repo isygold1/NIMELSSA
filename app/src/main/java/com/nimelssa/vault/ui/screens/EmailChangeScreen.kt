@@ -1,5 +1,6 @@
 package com.nimelssa.vault.ui.screens
 
+import android.util.Log
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +17,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -29,12 +32,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.UserSession
+
+private const val TAG = "EmailChangeScreen"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,7 +55,9 @@ fun EmailChangeScreen(
     val user by UserSession.state.collectAsState()
     var newEmail by remember { mutableStateOf("") }
     var confirmEmail by remember { mutableStateOf("") }
-    var step by remember { mutableStateOf(1) } // 1 = enter email, 2 = done
+    var password by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var step by remember { mutableStateOf(1) } // 1 = enter email, 2 = enter password, 3 = done
     var isLoading by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
@@ -79,8 +91,9 @@ fun EmailChangeScreen(
         ) {
             when (step) {
                 1 -> {
+                    // ── Step 1: Enter new email ──────────────────────────────
                     Text(
-                        text = "📧 Update Registered Email",
+                        text = "📧 Enter New Email",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.secondary,
                         fontWeight = FontWeight.Bold
@@ -88,6 +101,11 @@ fun EmailChangeScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Current email: ${user.email.ifEmpty { "Not set" }}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "You will be asked to confirm your password on the next screen.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -152,23 +170,124 @@ fun EmailChangeScreen(
                                 errorMsg = "Emails do not match."
                                 return@Button
                             }
+                            if (newEmail == user.email) {
+                                errorMsg = "New email is the same as your current email."
+                                return@Button
+                            }
+                            // Move to password step
+                            step = 2
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        enabled = newEmail.isNotEmpty() && confirmEmail == newEmail && newEmail.contains("@"),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Continue", fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                2 -> {
+                    // ── Step 2: Enter password for re-authentication ─────────
+                    Text(
+                        text = "🔑 Confirm Your Password",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Enter your current password to confirm the email change.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "New email: $newEmail",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it; errorMsg = null },
+                        label = { Text("Current Password") },
+                        placeholder = { Text("Enter your password") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !isLoading,
+                        visualTransformation = if (passwordVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) {
+                                        Icons.Default.VisibilityOff
+                                    } else {
+                                        Icons.Default.Visibility
+                                    },
+                                    contentDescription = if (passwordVisible) {
+                                        "Hide password"
+                                    } else {
+                                        "Show password"
+                                    }
+                                )
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+
+                    // Error message
+                    if (errorMsg != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "❌ $errorMsg",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFEF4444)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Back & Submit buttons
+                    Button(
+                        onClick = {
+                            if (password.isBlank()) {
+                                errorMsg = "Please enter your current password."
+                                return@Button
+                            }
                             isLoading = true
                             errorMsg = null
-                            UserSession.updateEmail(newEmail.trim()) { success, message ->
+
+                            Log.d(TAG, "Re-authenticating and updating email to: $newEmail")
+                            UserSession.reauthenticateAndUpdateEmail(
+                                password = password.trim(),
+                                newEmail = newEmail.trim()
+                            ) { success, message ->
                                 isLoading = false
                                 if (success) {
-                                    step = 2
+                                    Log.d(TAG, "Email updated successfully")
+                                    step = 3
                                 } else {
-                                    errorMsg = message ?: "Email update failed."
+                                    Log.e(TAG, "Email update failed: $message")
+                                    errorMsg = message
                                 }
                             }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),
-                        enabled = !isLoading && newEmail.isNotEmpty()
-                                && confirmEmail == newEmail
-                                && newEmail.contains("@"),
+                        enabled = !isLoading && password.isNotEmpty(),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         if (isLoading) {
@@ -181,10 +300,23 @@ fun EmailChangeScreen(
                             Text("Update Email", fontWeight = FontWeight.Bold)
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    TextButton(
+                        onClick = {
+                            step = 1
+                            errorMsg = null
+                            password = ""
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Back", color = MaterialTheme.colorScheme.primary)
+                    }
                 }
 
-                2 -> {
-                    // Success
+                3 -> {
+                    // ── Step 3: Success ─────────────────────────────────────
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
