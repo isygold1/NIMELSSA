@@ -28,7 +28,7 @@ android {
             keyAlias = "nimelssa"
             keyPassword = "Nimelssa2026"
         }
-        create("debug") {
+        create("debugKey") {
             storeFile = file("../debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
@@ -39,7 +39,7 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("debugKey")
         }
         release {
             isMinifyEnabled = true
