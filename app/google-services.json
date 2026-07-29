@@ -14,6 +14,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "138189661996-46gposln23c2me4l6h6s1kf7mjmp8kgs.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nimelssa.vault",
+            "certificate_hash": "c6a59025ddc8ad47458d99b394607db97d2a887c"
+          }
+        },
+        {
+          "client_id": "138189661996-8im2klo82ju2hl19gef2955icgsssdj4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nimelssa.vault",
+            "certificate_hash": "4f195f334bffc980a378e6d27b80c2a7f4bbac09"
+          }
+        },
+        {
           "client_id": "138189661996-4vfs7kdapco4t1r40ikret8r1rc9pcie.apps.googleusercontent.com",
           "client_type": 3
         }
