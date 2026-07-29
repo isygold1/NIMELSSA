@@ -29,6 +29,13 @@ jobs:
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
 
+      - name: 🔑 Decode debug keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > debug.keystore
+          echo "Keystore decoded: $(wc -c < debug.keystore) bytes"
+
       - name: 🏗️ Build debug APK with Gradle
         run: ./gradlew assembleDebug
         env:
