@@ -199,6 +199,9 @@ fun MainApp() {
                                 launchSingleTop = true
                                 restoreState = true
                             }
+                        },
+                        onOpenDrawer = {
+                            scope.launch { drawerState.open() }
                         }
                     )
                 }

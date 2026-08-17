@@ -76,7 +76,7 @@ fun CourseCard(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = if (resources.any { it.masterUrl.isNotBlank() }) "🌐 Link Mode"
-                               else "⏳ No resources yet",
+                               else "📄 No resources yet",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (resources.any { it.masterUrl.isNotBlank() })
                                 MaterialTheme.colorScheme.onSurfaceVariant
@@ -123,7 +123,7 @@ fun CourseCard(
                 }
             } else {
                 Text(
-                    text = "⏳ No resources yet — check back later",
+                    text = "📄 No resources yet — propose it to your class rep",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 4.dp)

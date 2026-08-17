@@ -16,7 +16,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.UserRole
@@ -34,7 +33,7 @@ fun DrawerHeader(user: UserState) {
         Text(
             text = user.name.ifEmpty { "User" },
             style = MaterialTheme.typography.titleLarge,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onPrimary,
             fontWeight = FontWeight.Bold
         )
         Spacer(modifier = Modifier.height(4.dp))
@@ -46,7 +45,7 @@ fun DrawerHeader(user: UserState) {
         Text(
             text = roleText,
             style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.85f)
+            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
         )
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -59,6 +60,7 @@ import com.nimelssa.vault.ui.components.CourseCard
 fun WorkspaceScreen(
     onOpenViewer: (Course, String?) -> Unit,
     onNavigateToPropose: () -> Unit = {},
+    onOpenDrawer: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val userState by UserSession.state.collectAsState()
@@ -93,6 +95,33 @@ fun WorkspaceScreen(
     val pendingCount = myProposals.count { it.status == "pending" }
 
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        // ── App header: hamburger (opens drawer) + workspace title ──
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onOpenDrawer) {
+                Icon(
+                    imageVector = Icons.Default.Menu,
+                    contentDescription = "Open navigation menu"
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "NIMELSSA Vault",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = if (userState.role == UserRole.REP) "Rep Workspace" else "Workspace",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
         // ── Pending proposals tracker (students only) ──
         if (pendingCount > 0 && userState.role == UserRole.STUDENT) {
             Spacer(modifier = Modifier.height(8.dp))
@@ -239,9 +268,17 @@ fun WorkspaceScreen(
                         Text(text = "🗄️", fontSize = MaterialTheme.typography.headlineLarge.fontSize)
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "No courses available for this level and semester.",
+                            text = "No resources for ${selectedLevel} Level • ${if (selectedSemester == 1) "1st" else "2nd"} Semester yet",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Be the first to propose a lecture note, past question, or textbook. Your class rep approves it and it appears here.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
@@ -251,7 +288,7 @@ fun WorkspaceScreen(
                             ),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("Be the first to contribute")
+                            Text("Propose a resource")
                         }
                     }
                 }

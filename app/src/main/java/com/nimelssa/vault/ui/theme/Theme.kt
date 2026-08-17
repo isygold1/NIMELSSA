@@ -3,6 +3,7 @@ package com.nimelssa.vault.ui.theme
 import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -30,11 +31,33 @@ private val NimelssaColorScheme = lightColorScheme(
     outlineVariant = Slate100
 )
 
+private val NimelssaDarkColorScheme = darkColorScheme(
+    primary = Teal300,
+    onPrimary = Slate950,
+    primaryContainer = Teal900,
+    onPrimaryContainer = Teal300,
+    secondary = Blue300,
+    onSecondary = Slate950,
+    secondaryContainer = Blue900,
+    onSecondaryContainer = Blue300,
+    error = Red300,
+    errorContainer = Red900,
+    background = Slate950,
+    onBackground = Slate100,
+    surface = Slate900,
+    onSurface = Slate100,
+    surfaceVariant = Slate800,
+    onSurfaceVariant = Slate300,
+    outline = Slate700,
+    outlineVariant = Slate800
+)
+
 @Composable
 fun NIMELSSATheme(
     content: @Composable () -> Unit
 ) {
-    val colorScheme = NimelssaColorScheme
+    val darkTheme = isSystemInDarkTheme()
+    val colorScheme = if (darkTheme) NimelssaDarkColorScheme else NimelssaColorScheme
     val view = LocalView.current
 
     if (!view.isInEditMode) {
