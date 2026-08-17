@@ -43,13 +43,17 @@ import com.nimelssa.vault.ui.screens.ProfileScreen
 import com.nimelssa.vault.ui.screens.ProposeScreen
 import com.nimelssa.vault.ui.screens.ReportScreen
 import com.nimelssa.vault.ui.screens.ReportsDashboardScreen
+import com.nimelssa.vault.ui.screens.SettingsScreen
 import com.nimelssa.vault.ui.screens.WorkspaceScreen
 import com.nimelssa.vault.ui.theme.NIMELSSATheme
+import com.nimelssa.vault.ui.theme.ThemeManager
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Restore persisted theme preference before composing
+        ThemeManager.init(applicationContext)
         // Check for existing Firebase Auth session on startup
         UserSession.checkExistingSession()
         setContent {
@@ -71,6 +75,7 @@ object Routes {
     const val EMAIL_CHANGE = "email_change"
     const val REPORT = "report"
     const val REPORTS_DASHBOARD = "reports_dashboard"
+    const val SETTINGS = "settings"
 
     fun viewerRoute(courseCode: String, resourceType: String? = null) =
         if (resourceType != null) "viewer/$courseCode?resourceType=$resourceType"
@@ -152,6 +157,10 @@ fun MainApp() {
                     onNavigateToReportsDashboard = {
                         scope.launch { drawerState.close() }
                         navController.navigate(Routes.REPORTS_DASHBOARD)
+                    },
+                    onNavigateToSettings = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate(Routes.SETTINGS)
                     },
                     onLogout = {
                         scope.launch { drawerState.close() }
@@ -273,6 +282,12 @@ fun MainApp() {
 
                 composable(Routes.REPORTS_DASHBOARD) {
                     ReportsDashboardScreen(
+                        onClose = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Routes.SETTINGS) {
+                    SettingsScreen(
                         onClose = { navController.popBackStack() }
                     )
                 }

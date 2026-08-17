@@ -80,6 +80,7 @@ fun DrawerContent(
     onNavigateToEmailMod: () -> Unit,
     onNavigateToReport: () -> Unit,
     onNavigateToReportsDashboard: (() -> Unit)? = null,
+    onNavigateToSettings: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -99,6 +100,7 @@ fun DrawerContent(
         DrawerMenuItem(text = "👤 Personal Information", onClick = onNavigateToProfile)
         DrawerMenuItem(text = "📧 Change Registered Email", onClick = onNavigateToEmailMod)
         DrawerMenuItem(text = "🐛 Report Issue / Complaint", onClick = onNavigateToReport)
+        DrawerMenuItem(text = "⚙️ Settings", onClick = onNavigateToSettings)
 
         if (isStaff && onNavigateToReportsDashboard != null) {
             DrawerMenuItem(text = "📋 Reports Dashboard", onClick = onNavigateToReportsDashboard)
