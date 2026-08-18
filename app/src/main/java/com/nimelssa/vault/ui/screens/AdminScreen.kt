@@ -1416,7 +1416,7 @@ private fun EditCourseDialog(
         onDismissRequest = onDismiss,
         title = { Text("✏️ Edit Course") },
         text = {
-            Column(verticalScroll(rememberScrollState())) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = code,
                     onValueChange = { code = it.uppercase() },
@@ -1596,7 +1596,7 @@ private fun LinkCodeDialog(
         onDismissRequest = onDismiss,
         title = { Text("🔗 Link Course Code") },
         text = {
-            Column(verticalScroll(rememberScrollState())) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     text = "Old/alternate code → course it actually belongs to. " +
                            "Files filed under the old code will appear on the target's shelf.",
