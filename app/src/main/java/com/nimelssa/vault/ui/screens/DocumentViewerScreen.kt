@@ -582,8 +582,16 @@ private suspend fun downloadPdf(
 
         // Sanity check: a real PDF starts with "%PDF". Drive sometimes serves
         // an HTML page instead (restricted file) — treat that as failure.
-        val magic = target.inputStream().use { it.readBytes(4) }
-        if (!magic.startsWith(byteArrayOf(0x25, 0x50, 0x44, 0x46))) {  // "%PDF"
+        val magic = ByteArray(4)
+        var magicRead = 0
+        target.inputStream().use { ins ->
+            while (magicRead < 4) {
+                val r = ins.read(magic, magicRead, 4 - magicRead)
+                if (r == -1) break
+                magicRead += r
+            }
+        }
+        if (magicRead < 4 || !magic.contentEquals(byteArrayOf(0x25, 0x50, 0x44, 0x46))) {  // "%PDF"
             target.delete()
             return@withContext null
         }
@@ -636,7 +644,7 @@ private fun ResourceListView(
                     notes = resource.notes,
                     isAvailableOffline = localFile != null,
                     isOnline = isOnline,
-                    onOpen = { onOpenResource(resource, url, localFile) }
+                    onOpen = { onOpenResource(resource, url, localFile?.let { File(it) }) }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
