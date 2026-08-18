@@ -61,6 +61,7 @@ import com.nimelssa.vault.data.Resource
 import com.nimelssa.vault.data.ResourceRepository
 import com.nimelssa.vault.data.UserRole
 import com.nimelssa.vault.data.UserSession
+import com.nimelssa.vault.ui.components.AppScreenHeader
 import kotlinx.coroutines.launch
 
 /**
@@ -88,6 +89,7 @@ private data class ManualAssignment(
 fun AdminScreen(
     repLevel: String,
     onPreview: (Course, String?) -> Unit = { _, _ -> },
+    onOpenDrawer: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val user by UserSession.state.collectAsState()
@@ -124,13 +126,10 @@ fun AdminScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        // ── Header ──
-        Text(
-            text = if (isAdmin) "🛡️ Admin Console — Overseer"
-                   else "📋 ${repLevel}L Resource Manager",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.error,
-            fontWeight = FontWeight.Bold
+        // ── Header (shared pattern: hamburger + app label + screen title) ──
+        AppScreenHeader(
+            title = if (isAdmin) "Admin Console" else "Rep Desk",
+            onOpenDrawer = onOpenDrawer
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -147,7 +146,7 @@ fun AdminScreen(
                 text = "⏳ Pending Proposals (${pendingProposals.size})",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFFFBBF24)
+                color = MaterialTheme.colorScheme.tertiary
             )
             Spacer(modifier = Modifier.height(8.dp))
 

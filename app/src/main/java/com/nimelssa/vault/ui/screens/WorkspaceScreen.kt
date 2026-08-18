@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -53,6 +52,7 @@ import com.nimelssa.vault.data.Resource
 import com.nimelssa.vault.data.ResourceRepository
 import com.nimelssa.vault.data.UserRole
 import com.nimelssa.vault.data.UserSession
+import com.nimelssa.vault.ui.components.AppScreenHeader
 import com.nimelssa.vault.ui.components.CourseCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,31 +96,10 @@ fun WorkspaceScreen(
 
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         // ── App header: hamburger (opens drawer) + workspace title ──
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onOpenDrawer) {
-                Icon(
-                    imageVector = Icons.Default.Menu,
-                    contentDescription = "Open navigation menu"
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "NIMELSSA Vault",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = if (userState.role == UserRole.REP) "Rep Workspace" else "Workspace",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        }
+        AppScreenHeader(
+            title = if (userState.role == UserRole.REP) "Rep Workspace" else "Workspace",
+            onOpenDrawer = onOpenDrawer
+        )
 
         // ── Pending proposals tracker (students only) ──
         if (pendingCount > 0 && userState.role == UserRole.STUDENT) {

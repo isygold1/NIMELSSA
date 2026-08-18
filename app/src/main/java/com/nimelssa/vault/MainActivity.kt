@@ -221,6 +221,9 @@ fun MainApp() {
                             navController.navigate(Routes.WORKSPACE) {
                                 popUpTo(Routes.WORKSPACE) { saveState = true }
                             }
+                        },
+                        onOpenDrawer = {
+                            scope.launch { drawerState.open() }
                         }
                     )
                 }
@@ -232,6 +235,9 @@ fun MainApp() {
                         repLevel = userState.repLevel,
                         onPreview = { course, resourceType ->
                             navController.navigate(Routes.viewerRoute(course.code, resourceType))
+                        },
+                        onOpenDrawer = {
+                            scope.launch { drawerState.open() }
                         }
                     )
                 }

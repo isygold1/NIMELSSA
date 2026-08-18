@@ -35,7 +35,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import android.util.Log
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.DriveScanner
@@ -43,6 +42,7 @@ import com.nimelssa.vault.data.Levels
 import com.nimelssa.vault.data.ProposalRepository
 import com.nimelssa.vault.data.ResourceRepository
 import com.nimelssa.vault.data.UserSession
+import com.nimelssa.vault.ui.components.AppScreenHeader
 import kotlinx.coroutines.launch
 
 /**
@@ -52,6 +52,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ProposeScreen(
     onProposed: () -> Unit,
+    onOpenDrawer: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val user by UserSession.state.collectAsState()
@@ -109,12 +110,10 @@ fun ProposeScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        // Header
-        Text(
-            text = "📤 Propose Resource",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.secondary,
-            fontWeight = FontWeight.Bold
+        // Header (shared pattern: hamburger + app label + screen title)
+        AppScreenHeader(
+            title = "Propose Resource",
+            onOpenDrawer = onOpenDrawer
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -129,25 +128,27 @@ fun ProposeScreen(
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF3C7))
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(
                     text = "💡 For best results, name your files:",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF92400E)
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
                 Text(
                     text = "CourseCode_Type.ext  (e.g., CSC101_LN.pdf, MLS301_PQ.pdf)",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF92400E)
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Type: LN=Lecture Notes, PQ=Past Questions, TB=Textbook",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF92400E)
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
         }
@@ -247,14 +248,16 @@ fun ProposeScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFDCFCE7))
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                )
             ) {
                 Box(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = message!!,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF166534)
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
                     )
                 }
             }
@@ -276,7 +279,7 @@ fun ProposeScreen(
             Spacer(modifier = Modifier.height(8.dp))
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFFFFF3CD)
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
                 ),
                 shape = RoundedCornerShape(8.dp)
             ) {
@@ -285,23 +288,24 @@ fun ProposeScreen(
                         text = "⚠️ Possible Duplicate",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF856404)
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = duplicateWarning!!,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF856404)
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = { duplicateWarning = null },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF6C757D)
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                             ),
                             shape = RoundedCornerShape(8.dp)
-                        ) { Text("Cancel", color = Color.White) }
+                        ) { Text("Cancel") }
                         Button(
                             onClick = {
                                 val link = pendingLink
@@ -311,10 +315,10 @@ fun ProposeScreen(
                                 scope.launch { submitProposal(link) }
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFDC3545)
+                                containerColor = MaterialTheme.colorScheme.error
                             ),
                             shape = RoundedCornerShape(8.dp)
-                        ) { Text("Submit Anyway", color = Color.White) }
+                        ) { Text("Submit Anyway", color = MaterialTheme.colorScheme.onError) }
                     }
                 }
             }
