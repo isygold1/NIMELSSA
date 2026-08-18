@@ -879,8 +879,9 @@ private suspend fun scanProposal(proposal: Proposal) {
 
         if (autoMatch) {
             // Non-null because autoMatch above guarantees courseCode != null.
-            // (Hoisted into a val so the compiler sees a stable non-null type.)
-            val matchedCode = parseResult.courseCode ?: return@loop
+            // (Hoisted into a val so the compiler sees a stable non-null type;
+            // continue@loop is defensive only and never actually fires.)
+            val matchedCode = parseResult.courseCode ?: continue@loop
 
             val resourceLabel = when (parseResult.resourceType) {
                 "LN" -> "Lecture Notes"
