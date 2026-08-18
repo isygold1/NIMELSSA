@@ -48,7 +48,10 @@ object FilenameParser {
     // Keywords that hint at resource type
     private val LN_KEYWORDS = listOf(
         "note", "lecture", "slide", "classnote", "lesson", "module", "tutorial", "handout",
-        "slt", "nslt"
+        // Lecture venues at University of Ilorin — files named by venue are
+        // lecture materials: SLT/NSLT (Science Lecture Theatre), LT1/LT2
+        // (Lecture Theatre), LhA/LhB (Lecture Hall A/B).
+        "slt", "nslt", "nlst", "lt1", "lt2", "lha", "lhb", "lecture hall", "lecture theatre"
     )
     private val PQ_KEYWORDS = listOf(
         "past", "question", "exam", "test", "pq", "practice", "quiz", "assignment",
@@ -272,7 +275,7 @@ object FilenameParser {
      * Only segments at-or-after the level folder (e.g. "200 level") are
      * inspected. This prevents a root-level folder named "TEXTBOOKS*" from
      * tagging EVERY file beneath it as TB when the real type is said by the
-     * filename (e.g. ".../TEXTBOOKS*/300 level/MLS 301/Notes.pdf" → LN).
+     * filename (e.g. ".../TEXTBOOKS/300 level/MLS 301/Notes.pdf" → LN).
      */
     private fun extractTypeFromPath(path: String): String? {
         val lower = path.lowercase(Locale.ROOT)

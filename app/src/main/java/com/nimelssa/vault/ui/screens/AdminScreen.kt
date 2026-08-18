@@ -1,5 +1,7 @@
 package com.nimelssa.vault.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nimelssa.vault.data.AiMatchedItem
@@ -555,6 +558,27 @@ private fun UnmatchedAssignmentCard(
                     color = Color(0xFFE2E8F0),
                     modifier = Modifier.weight(1f)
                 )
+                // MUST-HAVE: the rep must be able to view the file's content
+                // before assigning it — opens the Drive preview in the browser.
+                val context = LocalContext.current
+                Text(
+                    text = "👁 View",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF93C5FD),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clickable {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse(
+                                        "https://drive.google.com/file/d/${unmatchedFile.fileId}/view"
+                                    )
+                                )
+                            )
+                        }
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
                 if (currentAssignment != null) {
                     Text(
                         text = if (resourceType == "TB") "📚 TB" else "✓ Assigned",
@@ -841,7 +865,7 @@ private suspend fun scanProposal(proposal: Proposal) {
     val matchedItems = mutableListOf<AiMatchedItem>()
     val unmatchedFiles = mutableListOf<com.nimelssa.vault.data.AiUnmatchedFile>()
 
-    for (file in result.files) {
+    loop@ for (file in result.files) {
         // Use path-aware parsing — folder names (like "200 level / MLS 201")
         // give the AI much more context than filenames alone
         val parseResult = FilenameParser.parseWithPath(file.name, file.path)
@@ -854,6 +878,10 @@ private suspend fun scanProposal(proposal: Proposal) {
              parseResult.confidence == FilenameParser.Confidence.MEDIUM)
 
         if (autoMatch) {
+            // Non-null because autoMatch above guarantees courseCode != null.
+            // (Hoisted into a val so the compiler sees a stable non-null type.)
+            val matchedCode = parseResult.courseCode ?: return@loop
+
             val resourceLabel = when (parseResult.resourceType) {
                 "LN" -> "Lecture Notes"
                 "PQ" -> "Past Questions"
@@ -862,17 +890,17 @@ private suspend fun scanProposal(proposal: Proposal) {
             }
 
             // Look up the course in the repository for its full name
-            val existingCourse = CourseRepository.findCourse(parseResult.courseCode)
-            val courseName = existingCourse?.name ?: parseResult.courseCode
+            val existingCourse = CourseRepository.findCourse(matchedCode)
+            val courseName = existingCourse?.name ?: matchedCode
             // Use level from path first, then from existing course, then infer from code
             val level = parseResult.level
                 ?: existingCourse?.level
-                ?: inferLevelFromCode(parseResult.courseCode)
+                ?: inferLevelFromCode(matchedCode)
             val semester = parseResult.semester ?: existingCourse?.semester ?: 1
 
             matchedItems.add(
                 AiMatchedItem(
-                    courseCode = parseResult.courseCode,
+                    courseCode = matchedCode,
                     courseName = courseName,
                     level = level,
                     semester = semester,
