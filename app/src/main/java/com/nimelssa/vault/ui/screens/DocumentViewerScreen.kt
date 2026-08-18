@@ -1,6 +1,7 @@
 package com.nimelssa.vault.ui.screens
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -8,7 +9,10 @@ import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,12 +27,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -46,10 +56,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.nimelssa.vault.data.Course
@@ -57,7 +69,13 @@ import com.nimelssa.vault.data.CourseRepository
 import com.nimelssa.vault.data.OfflineManager
 import com.nimelssa.vault.data.Resource
 import com.nimelssa.vault.data.ResourceRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,8 +107,11 @@ fun DocumentViewerScreen(
     else
         resourceMap["__LEVEL__"]?.filter { levelHint == null || it.level == levelHint }
             ?: emptyList()
-    val resources = if (initialResourceType != null)
-        allResources.filter { it.resourceType == initialResourceType }
+
+    // Type filter chips (All / Notes / Past Qs / Textbook)
+    var filterType by remember { mutableStateOf(initialResourceType) }
+    val resources = if (filterType != null)
+        allResources.filter { it.resourceType == filterType }
     else allResources
 
     if (course == null) {
@@ -107,6 +128,13 @@ fun DocumentViewerScreen(
     var webViewProgress by remember { mutableIntStateOf(0) }
     var webViewError by remember { mutableStateOf<String?>(null) }
     var retryTick by remember { mutableIntStateOf(0) }   // bumped to re-attempt WebView load
+
+    // Native PDF preview (PdfRenderer): file + title once downloaded/opened
+    var pdfFile by remember { mutableStateOf<File?>(null) }
+    var pdfTitle by remember { mutableStateOf("") }
+    var pdfError by remember { mutableStateOf<String?>(null) }
+    var isDownloadingPdf by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableIntStateOf(0) }
     var isOnline by remember { mutableStateOf(OfflineManager.isOnline(context)) }
     var isSaving by remember { mutableStateOf(false) }
 
@@ -115,17 +143,24 @@ fun DocumentViewerScreen(
         isOnline = OfflineManager.isOnline(context)
     }
 
+    val previewTitle = when {
+        pdfFile != null -> pdfTitle
+        activeUrl != null -> activeTitle
+        else -> course.code
+    }
+    val inListMode = pdfFile == null && activeUrl == null
+
     Column(modifier = modifier.fillMaxSize()) {
         // ── Top bar ──
         TopAppBar(
             title = {
                 Column {
                     Text(
-                        text = if (activeUrl != null) activeTitle else course.code,
+                        text = previewTitle,
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 1
                     )
-                    if (activeUrl == null) {
+                    if (inListMode) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = if (isOnline) "● Online" else "○ Offline",
@@ -137,65 +172,35 @@ fun DocumentViewerScreen(
                 }
             },
             navigationIcon = {
-                TextButton(onClick = {
-                    if (activeUrl != null) {
-                        activeUrl = null
-                    } else {
-                        onClose()
+                IconButton(onClick = {
+                    when {
+                        pdfFile != null -> pdfFile = null
+                        activeUrl != null -> activeUrl = null
+                        else -> onClose()
                     }
                 }) {
-                    Text(
-                        if (activeUrl != null) "← Back" else "Close",
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Bold
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             },
             actions = {
                 if (activeUrl != null) {
-                    // WebView mode: let the user escape to a real browser
+                    // WebView mode: let the user escape to a Custom Tab
                     // (Drive previews are far more reliable in Chrome).
                     val currentUrl = activeUrl
                     if (currentUrl != null) {
                         TextButton(
                             onClick = {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl))
-                                )
+                                openCustomTab(context, currentUrl)
                             }
                         ) {
                             Text("↗ Browser", color = MaterialTheme.colorScheme.primary)
                         }
                     }
-                } else if (isSaving) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        TextButton(
-                            onClick = {
-                                isSaving = true
-                                scope.launch {
-                                    if (course.code in OfflineManager.getSavedCodes()) {
-                                        OfflineManager.removeOffline(course.code)
-                                    } else {
-                                        OfflineManager.saveOfflineResources(course.code, resources)
-                                    }
-                                    isSaving = false
-                                }
-                            },
-                            enabled = !isSaving
-                        ) {
-                            Text(
-                                text = if (course.code in OfflineManager.getSavedCodes()) "✓ Saved Offline"
-                                       else "Save Offline",
-                                color = if (course.code in OfflineManager.getSavedCodes())
-                                        MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.secondary
-                            )
-                        }
-                    }
+                }
             },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -212,6 +217,37 @@ fun DocumentViewerScreen(
             )
         }
 
+        // ── Type filter chips (list mode only) ──
+        if (inListMode) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val options = listOf(
+                    null to "All",
+                    "LN" to "📖 Notes",
+                    "PQ" to "📝 Past Qs",
+                    "TB" to "📚 Textbook"
+                )
+                options.forEach { (type, label) ->
+                    FilterChip(
+                        selected = filterType == type,
+                        onClick = { filterType = type },
+                        label = { Text(label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        Box(modifier = Modifier.weight(1f)) {
         if (webViewError != null) {
             // ── Broken link error card ──
             val failedUrl = activeUrl ?: ""
@@ -269,6 +305,78 @@ fun DocumentViewerScreen(
                     Text("← Back to resources")
                 }
             }
+        } else if (isDownloadingPdf) {
+            // ── PDF download in progress ──
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(16.dp))
+                LinearProgressIndicator(
+                    progress = { downloadProgress / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Downloading PDF… $downloadProgress%",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else if (pdfError != null) {
+            // ── PDF load failed (download or render) ──
+            val failedUrl = activeUrl ?: ""
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(text = "📥💔", fontSize = MaterialTheme.typography.headlineLarge.fontSize)
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = pdfError!!,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        pdfError = null
+                        pdfFile = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("← Back to resources")
+                }
+            }
+        } else if (pdfFile != null) {
+            // ── Native in-app PDF reader ──
+            val file = pdfFile
+            if (file != null) {
+                PdfReaderScreen(
+                    file = file,
+                    title = pdfTitle,
+                    onClose = { pdfFile = null },
+                    onOpenBrowser = {
+                        val currentUrl = activeUrl
+                        if (currentUrl != null && currentUrl.isNotBlank()) {
+                            openCustomTab(context, currentUrl)
+                        }
+                    }
+                )
+            }
         } else if (activeUrl != null) {
             // ── WebView mode ──
             val resolvedUrl = resolveResourceUrl(activeUrl!!)
@@ -284,32 +392,218 @@ fun DocumentViewerScreen(
         } else {
             // ── Resource list mode ──
             ResourceListView(
+                modifier = Modifier.fillMaxSize(),
                 course = course,
                 resources = resources,
                 isOnline = isOnline,
-                onOpenUrl = { url, title ->
-                    activeUrl = url
-                    activeTitle = title
+                filterLabel = when (filterType) {
+                    "LN" -> "lecture notes"
+                    "PQ" -> "past questions"
+                    "TB" -> "textbook"
+                    else -> null
+                },
+                onOpenResource = { resource, url, localFile ->
+                    scope.launch {
+                        when {
+                            // PDFs render natively in-app (offline copy first,
+                            // otherwise download once to cache).
+                            isPdfResource(resource) -> {
+                                val file = localFile
+                                if (file != null) {
+                                    pdfTitle = resource.fileName.ifBlank { resource.label }
+                                    pdfError = null
+                                    pdfFile = file
+                                } else {
+                                    isDownloadingPdf = true
+                                    downloadProgress = 0
+                                    pdfError = null
+                                    val downloaded = downloadPdf(context, resource, url) { p ->
+                                        downloadProgress = p
+                                    }
+                                    isDownloadingPdf = false
+                                    if (downloaded != null) {
+                                        pdfTitle = resource.fileName.ifBlank { resource.label }
+                                        pdfFile = downloaded
+                                    } else {
+                                        pdfError = "Could not download this PDF.\nIt may need a different share permission."
+                                    }
+                                }
+                            }
+                            // Local files (offline non-PDF copies) still use WebView
+                            url.startsWith("file://") || url.startsWith("/") -> {
+                                activeUrl = url
+                                activeTitle = "${course.code} — ${resource.resourceLabel}"
+                            }
+                            // Everything online and non-PDF opens in a Custom Tab
+                            else -> openCustomTab(context, url)
+                        }
+                    }
                 }
             )
+        }
+        }
+
+        // ── Sticky offline bar (list mode only) ──
+        if (inListMode) {
+            val savedOffline = course.code in OfflineManager.getSavedCodes()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = {
+                        isSaving = true
+                        scope.launch {
+                            if (course.code in OfflineManager.getSavedCodes()) {
+                                OfflineManager.removeOffline(course.code)
+                            } else {
+                                OfflineManager.saveOfflineResources(course.code, allResources)
+                            }
+                            isSaving = false
+                        }
+                    },
+                    enabled = !isSaving && allResources.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (savedOffline)
+                            MaterialTheme.colorScheme.tertiaryContainer
+                        else MaterialTheme.colorScheme.primary,
+                        contentColor = if (savedOffline)
+                            MaterialTheme.colorScheme.onTertiaryContainer
+                        else MaterialTheme.colorScheme.onPrimary
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = if (savedOffline) "✓ Saved offline" else "💾 Save course offline",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                val usedMb = OfflineManager.getUsedBytes() / (1024 * 1024)
+                val maxMb = OfflineManager.getMaxBytes() / (1024 * 1024)
+                Text(
+                    text = "$usedMb / $maxMb MB",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
 
 // ─────────────── Resource list ───────────────
 
+/** Is this resource a PDF (by filename or direct URL)? */
+private fun isPdfResource(resource: Resource): Boolean {
+    val name = resource.fileName.lowercase()
+    if (name.endsWith(".pdf")) return true
+    val url = resource.masterUrl.lowercase().substringBefore("?")
+    return url.endsWith(".pdf")
+}
+
+/** Opens a URL in a Chrome Custom Tab (falls back to the default browser). */
+private fun openCustomTab(context: Context, url: String) {
+    if (url.isBlank()) return
+    CustomTabsIntent.Builder()
+        .setShowTitle(true)
+        .build()
+        .launchUrl(context, Uri.parse(url))
+}
+
+/**
+ * Downloads a PDF to the app cache so it can be rendered in-app with
+ * PdfRenderer. Drive files download via the `uc?export=download` endpoint
+ * (preview URLs serve HTML, not bytes).
+ */
+private suspend fun downloadPdf(
+    context: Context,
+    resource: Resource,
+    fallbackUrl: String,
+    onProgress: (Int) -> Unit
+): File? = withContext(Dispatchers.IO) {
+    val downloadUrl = when {
+        resource.fileId.isNotBlank() ->
+            "https://drive.google.com/uc?export=download&id=${resource.fileId}"
+        else -> fallbackUrl
+    }
+    if (downloadUrl.isBlank()) return@withContext null
+    try {
+        val safeName = resource.fileName
+            .ifBlank { "document.pdf" }
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val target = File(File(context.cacheDir, "pdf_reader"), safeName)
+        target.parentFile?.mkdirs()
+
+        var current = URL(downloadUrl)
+        var redirects = 0
+        var connection: HttpURLConnection? = null
+        var input: java.io.InputStream? = null
+        var ok = false
+        while (true) {
+            connection = current.openConnection() as HttpURLConnection
+            connection.instanceFollowRedirects = false
+            connection.connect()
+            val code = connection.responseCode
+            if (code in 300..399) {
+                val location = connection.getHeaderField("Location")
+                connection.disconnect()
+                if (location == null || redirects++ > 5) break
+                current = URL(current, location)
+                continue
+            }
+            if (code != 200) break
+            input = connection.inputStream
+            ok = true
+            break
+        }
+
+        if (!ok) {
+            connection?.disconnect()
+            return@withContext null
+        }
+
+        val total = connection?.contentLength ?: -1
+        FileOutputStream(target).use { out ->
+            val buffer = ByteArray(8192)
+            var done = 0
+            val stream = input!!
+            while (true) {
+                val n = stream.read(buffer)
+                if (n == -1) break
+                out.write(buffer, 0, n)
+                done += n
+                if (total > 0) onProgress((done * 100) / total)
+            }
+        }
+        input?.close()
+        connection?.disconnect()
+
+        // Sanity check: a real PDF starts with "%PDF". Drive sometimes serves
+        // an HTML page instead (restricted file) — treat that as failure.
+        val magic = target.inputStream().use { it.readBytes(4) }
+        if (!magic.startsWith(byteArrayOf(0x25, 0x50, 0x44, 0x46))) {  // "%PDF"
+            target.delete()
+            return@withContext null
+        }
+        target
+    } catch (e: Exception) {
+        null
+    }
+}
+
 @Composable
 private fun ResourceListView(
+    modifier: Modifier = Modifier,
     course: com.nimelssa.vault.data.Course,
     resources: List<Resource>,
     isOnline: Boolean,
-    onOpenUrl: (String, String) -> Unit
+    filterLabel: String? = null,
+    onOpenResource: (Resource, String, File?) -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     Column(
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = modifier
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
@@ -325,43 +619,6 @@ private fun ResourceListView(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        // Offline badge
-        if (course.code in OfflineManager.getSavedCodes()) {
-            Spacer(modifier = Modifier.height(6.dp))
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFDCFCE7)),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text(
-                    text = "📥 Available offline",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF166534)
-                )
-            }
-        } else {
-            // Show storage info when not saved
-            val usedMb = OfflineManager.getUsedBytes() / (1024 * 1024)
-            val maxMb = OfflineManager.getMaxBytes() / (1024 * 1024)
-            if (usedMb > 0) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "💾 Offline storage: ${usedMb}MB / ${maxMb}MB used",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Text(
-            text = "📚 Available Resources",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
         Spacer(modifier = Modifier.height(12.dp))
 
         if (resources.isNotEmpty()) {
@@ -372,13 +629,14 @@ private fun ResourceListView(
                 // so no approved resource ever opens dead.
                 val url = resourceUrl(resource)
                 ResourceCard(
-                    title = "${resource.icon} ${resource.resourceLabel}",
-                    subtitle = resource.label.ifBlank { displayUrl(url) },
-                    url = url,
+                    icon = resource.icon,
+                    title = resource.fileName.ifBlank { resource.label.ifBlank { resource.resourceLabel } },
+                    subtitle = "${resource.resourceLabel}" +
+                        if (resource.submittedBy.isNotBlank()) " • by ${resource.submittedBy}" else "",
                     notes = resource.notes,
                     isAvailableOffline = localFile != null,
                     isOnline = isOnline,
-                    onOpen = { onOpenUrl(url, "${course.code} — ${resource.resourceLabel}") }
+                    onOpen = { onOpenResource(resource, url, localFile) }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
@@ -397,14 +655,18 @@ private fun ResourceListView(
                     Text(text = "📭", fontSize = MaterialTheme.typography.headlineLarge.fontSize)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "No materials uploaded yet",
+                        text = if (filterLabel != null) "No $filterLabel yet"
+                               else "No materials uploaded yet",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Use the Propose tab to submit resources for this course.",
+                        text = if (filterLabel != null)
+                            "Propose one to your class rep — it appears here once approved."
+                        else
+                            "Use the Propose tab to submit resources for this course.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
@@ -461,79 +723,85 @@ private fun resourceUrl(resource: Resource): String {
 
 @Composable
 private fun ResourceCard(
+    icon: String,
     title: String,
     subtitle: String,
-    url: String,
     notes: String,
     isAvailableOffline: Boolean,
     isOnline: Boolean,
     onOpen: () -> Unit
 ) {
+    val canOpen = isOnline || isAvailableOffline
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(14.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        Row(modifier = Modifier.padding(14.dp)) {
+            // Icon tile
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
             ) {
+                Text(text = icon, style = MaterialTheme.typography.titleLarge)
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
-                if (isAvailableOffline) {
-                    Text(
-                        text = "📥",
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = displayUrl(url),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1
-            )
-            if (notes.isNotBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = notes,
-                    style = MaterialTheme.typography.bodySmall,
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
+                if (notes.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = notes,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-            val canOpen = isOnline || isAvailableOffline
-            Button(
-                onClick = onOpen,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = canOpen,
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Text(
-                    text = when {
-                        !canOpen -> "Offline — No saved copy"
-                        isAvailableOffline -> "Open from device ↗"
-                        else -> "Open in App ↗"
-                    },
-                    fontWeight = FontWeight.Bold,
-                    color = if (canOpen) Color.White
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Button(
+                    onClick = onOpen,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = canOpen,
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Text(
+                        text = when {
+                            !canOpen -> "Offline — No saved copy"
+                            isAvailableOffline -> "📥 Open from device"
+                            else -> "Open ↗"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        color = if (canOpen) Color.White
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -604,6 +872,9 @@ private fun displayUrl(url: String): String {
         if (url.length > 40) url.take(37) + "..." else url
     }
 }
+
+// NOTE: displayUrl is kept for future use (resource subtitles now show
+// labels/file names instead of URLs).
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable

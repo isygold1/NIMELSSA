@@ -16,6 +16,7 @@ data class Resource(
     val fileId: String = "",           // Drive file ID (for duplicate detection)
     val md5Checksum: String = "",      // Drive file MD5 checksum (for duplicate detection)
     val label: String = "",            // human-readable label
+    val fileName: String = "",         // original Drive file name (for display)
     val submittedBy: String = "",
     val notes: String = "",
     val approvedBy: String = "",

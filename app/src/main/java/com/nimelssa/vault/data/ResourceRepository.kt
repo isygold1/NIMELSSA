@@ -193,6 +193,7 @@ object ResourceRepository {
             "fileId" to toSave.fileId,
             "md5Checksum" to toSave.md5Checksum,
             "label" to toSave.label,
+            "fileName" to toSave.fileName,
             "submittedBy" to toSave.submittedBy,
             "notes" to toSave.notes,
             "approvedBy" to toSave.approvedBy,

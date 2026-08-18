@@ -92,6 +92,9 @@ dependencies {
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
+    // Custom Tabs — reliable in-app-ish browser for non-PDF resources
+    implementation("androidx.browser:browser:1.8.0")
+
     // Lifecycle ViewModel Compose
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
 

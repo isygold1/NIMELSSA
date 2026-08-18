@@ -992,6 +992,7 @@ private suspend fun approveProposal(
                 md5Checksum = tbMd5,
                 label = tb.fileName.removeSuffix(".pdf").removeSuffix(".PDF")
                     .replace("_", " ").replace("-", " ").trim(),
+                fileName = tb.fileName,
                 submittedBy = proposal.submittedBy,
                 notes = "[Textbook] from ${tb.fileName} | ${proposal.notes}"
             ),
@@ -1035,6 +1036,7 @@ private suspend fun approveProposal(
                     fileId = firstItem.fileId,
                     md5Checksum = md5,
                     label = "$resourceLabel for $courseCode",
+                    fileName = firstItem.fileName,
                     submittedBy = proposal.submittedBy,
                     notes = finalNotes
                 ),
