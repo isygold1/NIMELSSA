@@ -1,7 +1,9 @@
 package com.nimelssa.vault.ui.screens
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -50,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
 import com.nimelssa.vault.data.OfflineManager
 import com.nimelssa.vault.data.Resource
@@ -62,13 +65,30 @@ fun DocumentViewerScreen(
     courseCode: String,
     onClose: () -> Unit,
     initialResourceType: String? = null,  // "LN", "PQ", "TB", or null to show all
+    levelHint: String? = null,  // level for the level-wide "TEXTBOOK" entry
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val resourceMap by ResourceRepository.resources.collectAsState()
-    val course = CourseRepository.findCourse(courseCode)
-    val allResources = resourceMap[CourseRepository.normalizeCode(courseCode)] ?: emptyList()
+
+    // "TEXTBOOK" is the synthetic course used by the Level Textbooks cards in
+    // the workspace. It has no Firestore/session course entry — build the
+    // display course from the level the card was on.
+    val isLevelTextbooks = courseCode == "TEXTBOOK"
+    val course = if (!isLevelTextbooks) CourseRepository.findCourse(courseCode)
+        else Course(
+            code = "TEXTBOOK",
+            name = "Reference Textbooks",
+            category = "TEXTBOOKS",
+            level = levelHint ?: "",
+            semester = 1
+        )
+    val allResources = if (!isLevelTextbooks)
+        resourceMap[CourseRepository.normalizeCode(courseCode)] ?: emptyList()
+    else
+        resourceMap["__LEVEL__"]?.filter { levelHint == null || it.level == levelHint }
+            ?: emptyList()
     val resources = if (initialResourceType != null)
         allResources.filter { it.resourceType == initialResourceType }
     else allResources
@@ -86,6 +106,7 @@ fun DocumentViewerScreen(
     var webViewLoading by remember { mutableStateOf(false) }
     var webViewProgress by remember { mutableIntStateOf(0) }
     var webViewError by remember { mutableStateOf<String?>(null) }
+    var retryTick by remember { mutableIntStateOf(0) }   // bumped to re-attempt WebView load
     var isOnline by remember { mutableStateOf(OfflineManager.isOnline(context)) }
     var isSaving by remember { mutableStateOf(false) }
 
@@ -131,8 +152,22 @@ fun DocumentViewerScreen(
                 }
             },
             actions = {
-                if (activeUrl == null) {
-                    if (isSaving) {
+                if (activeUrl != null) {
+                    // WebView mode: let the user escape to a real browser
+                    // (Drive previews are far more reliable in Chrome).
+                    val currentUrl = activeUrl
+                    if (currentUrl != null) {
+                        TextButton(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl))
+                                )
+                            }
+                        ) {
+                            Text("↗ Browser", color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                } else if (isSaving) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp
@@ -161,7 +196,6 @@ fun DocumentViewerScreen(
                             )
                         }
                     }
-                }
             },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -180,6 +214,7 @@ fun DocumentViewerScreen(
 
         if (webViewError != null) {
             // ── Broken link error card ──
+            val failedUrl = activeUrl ?: ""
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -195,17 +230,42 @@ fun DocumentViewerScreen(
                     color = MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = {
-                        webViewError = null
-                        activeUrl = null
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
+                Spacer(modifier = Modifier.height(20.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = {
+                            webViewError = null
+                            retryTick++
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("↺ Retry")
+                    }
+                    if (failedUrl.isNotBlank()) {
+                        Button(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(failedUrl))
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("↗ Open in browser")
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                TextButton(onClick = {
+                    webViewError = null
+                    activeUrl = null
+                }) {
                     Text("← Back to resources")
                 }
             }
@@ -214,6 +274,7 @@ fun DocumentViewerScreen(
             val resolvedUrl = resolveResourceUrl(activeUrl!!)
             ResourceWebView(
                 url = resolvedUrl,
+                retryKey = retryTick,
                 onLoadingChanged = { loading -> webViewLoading = loading },
                 onProgressChanged = { progress -> webViewProgress = progress },
                 onError = { errorDesc ->
@@ -306,14 +367,18 @@ private fun ResourceListView(
         if (resources.isNotEmpty()) {
             resources.forEach { resource ->
                 val localFile = OfflineManager.getLocalFile(course.code, resource.resourceType.lowercase())
+                // Approved resources carry masterUrl, but legacy or edge-case
+                // docs may only have fileId — build a viewable URL either way
+                // so no approved resource ever opens dead.
+                val url = resourceUrl(resource)
                 ResourceCard(
                     title = "${resource.icon} ${resource.resourceLabel}",
-                    subtitle = resource.label.ifBlank { resource.masterUrl },
-                    url = resource.masterUrl,
+                    subtitle = resource.label.ifBlank { displayUrl(url) },
+                    url = url,
                     notes = resource.notes,
                     isAvailableOffline = localFile != null,
                     isOnline = isOnline,
-                    onOpen = { onOpenUrl(resource.masterUrl, "${course.code} — ${resource.resourceLabel}") }
+                    onOpen = { onOpenUrl(url, "${course.code} — ${resource.resourceLabel}") }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
@@ -383,6 +448,16 @@ private fun ResourceListView(
 }
 
 // ─────────────── Resource card ───────────────
+
+/**
+ * The URL to open for a resource: masterUrl when present, otherwise a Drive
+ * view URL built from fileId (scan-approved resources always have fileId).
+ */
+private fun resourceUrl(resource: Resource): String {
+    if (resource.masterUrl.isNotBlank()) return resource.masterUrl
+    if (resource.fileId.isNotBlank()) return "https://drive.google.com/file/d/${resource.fileId}/view"
+    return ""
+}
 
 @Composable
 private fun ResourceCard(
@@ -474,6 +549,9 @@ private fun ResourceCard(
  */
 private fun resolveResourceUrl(url: String): String {
     return when {
+        // Blank (no masterUrl and no fileId) — nothing to load
+        url.isBlank() -> ""
+
         // Already a local file
         url.startsWith("file://") -> url
         url.startsWith("/") -> "file://$url"
@@ -481,6 +559,12 @@ private fun resolveResourceUrl(url: String): String {
         // Google Drive file link — extract file ID and use /preview
         url.contains("drive.google.com/file/d/") -> {
             val id = url.substringAfter("/file/d/").substringBefore("/").substringBefore("?")
+            "https://drive.google.com/file/d/$id/preview"
+        }
+
+        // Google Drive "open?id=" links (older share format)
+        url.contains("drive.google.com/open?id=") -> {
+            val id = url.substringAfter("open?id=").substringBefore("&")
             "https://drive.google.com/file/d/$id/preview"
         }
 
@@ -525,6 +609,7 @@ private fun displayUrl(url: String): String {
 @Composable
 private fun ResourceWebView(
     url: String,
+    retryKey: Int = 0,
     onLoadingChanged: (Boolean) -> Unit,
     onProgressChanged: (Int) -> Unit,
     onError: (String) -> Unit = {}
@@ -533,8 +618,8 @@ private fun ResourceWebView(
     var hadError by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Reload if URL changes
-        LaunchedEffect(url) {
+        // Reload if URL changes, or when the user hits "↺ Retry" (retryKey).
+        LaunchedEffect(url, retryKey) {
             hadError = false
             webView?.loadUrl(url)
         }

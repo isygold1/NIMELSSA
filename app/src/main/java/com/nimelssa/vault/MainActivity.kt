@@ -69,7 +69,7 @@ object Routes {
     const val WORKSPACE = "workspace"
     const val PROPOSE = "propose"
     const val ADMIN = "admin"
-    const val VIEWER = "viewer/{courseCode}?resourceType={resourceType}"
+    const val VIEWER = "viewer/{courseCode}?resourceType={resourceType}&level={level}"
     const val PROFILE = "profile"
     const val CBT = "cbt"
     const val EMAIL_CHANGE = "email_change"
@@ -77,9 +77,12 @@ object Routes {
     const val REPORTS_DASHBOARD = "reports_dashboard"
     const val SETTINGS = "settings"
 
-    fun viewerRoute(courseCode: String, resourceType: String? = null) =
-        if (resourceType != null) "viewer/$courseCode?resourceType=$resourceType"
-        else "viewer/$courseCode"
+    fun viewerRoute(courseCode: String, resourceType: String? = null, level: String? = null) =
+        buildString {
+            append("viewer/").append(courseCode)
+            if (resourceType != null) append("?resourceType=").append(resourceType)
+            if (level != null) append(if (resourceType != null) "&" else "?").append("level=").append(level)
+        }
 }
 
 @Composable
@@ -200,7 +203,7 @@ fun MainApp() {
                 composable(Routes.WORKSPACE) {
                     WorkspaceScreen(
                         onOpenViewer = { course, resourceType ->
-                            navController.navigate(Routes.viewerRoute(course.code, resourceType))
+                            navController.navigate(Routes.viewerRoute(course.code, resourceType, course.level))
                         },
                         onNavigateToPropose = {
                             navController.navigate(Routes.PROPOSE) {
@@ -234,7 +237,7 @@ fun MainApp() {
                     AdminScreen(
                         repLevel = userState.repLevel,
                         onPreview = { course, resourceType ->
-                            navController.navigate(Routes.viewerRoute(course.code, resourceType))
+                            navController.navigate(Routes.viewerRoute(course.code, resourceType, course.level))
                         },
                         onOpenDrawer = {
                             scope.launch { drawerState.open() }
@@ -250,14 +253,21 @@ fun MainApp() {
                             type = NavType.StringType
                             nullable = true
                             defaultValue = null
+                        },
+                        navArgument("level") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
                         }
                     )
                 ) { backStackEntry ->
                     val courseCode = backStackEntry.arguments?.getString("courseCode") ?: ""
                     val resourceType = backStackEntry.arguments?.getString("resourceType")
+                    val level = backStackEntry.arguments?.getString("level")
                     DocumentViewerScreen(
                         courseCode = courseCode,
                         initialResourceType = resourceType,
+                        levelHint = level,
                         onClose = { navController.popBackStack() }
                     )
                 }
