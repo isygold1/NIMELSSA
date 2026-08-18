@@ -20,13 +20,127 @@ import kotlinx.coroutines.tasks.await
 object CourseRepository {
     private const val TAG = "CourseRepository"
     private const val COLLECTION = "courses"
+    private const val ALIAS_COL = "course_aliases"
     private val firestore get() = FirebaseFirestore.getInstance()
 
     private val _courses = MutableStateFlow<List<Course>>(emptyList())
     val courses: StateFlow<List<Course>> = _courses.asStateFlow()
 
+    /**
+     * Course-code alias table (CCMAS equivalences).
+     * Map: normalized VARIANT code → normalized CANONICAL code.
+     * When a course's code changes (new CCMAS), the old code is registered as
+     * a variant so resources filed under it still surface on the new shelf.
+     * Firestore: `course_aliases/{variantNormalized}` → {variant, canonical}.
+     */
+    private val _aliases = MutableStateFlow<Map<String, String>>(emptyMap())
+    val aliases: StateFlow<Map<String, String>> = _aliases.asStateFlow()
+
+    /** Load all course-code aliases from Firestore. Idempotent. */
+    suspend fun loadAliases() {
+        try {
+            val snap = firestore.collection(ALIAS_COL).get().await()
+            _aliases.value = snap.documents.mapNotNull { doc ->
+                val variant = doc.getString("variant") ?: return@mapNotNull null
+                val canonical = doc.getString("canonical") ?: return@mapNotNull null
+                normalizeCode(variant) to normalizeCode(canonical)
+            }.toMap()
+            Log.d(TAG, "Loaded ${_aliases.value.size} course-code aliases")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load course-code aliases", e)
+            _aliases.value = emptyMap()
+        }
+    }
+
+    /**
+     * Resolve a code through the alias table (variant → canonical), following
+     * chains (a code edited twice) with a depth + loop guard.
+     */
+    fun resolveCode(code: String): String {
+        val normalized = normalizeCode(code)
+        if (normalized.isBlank()) return normalized
+        var current = normalized
+        val seen = mutableSetOf<String>()
+        var hops = 0
+        while (hops < 5) {
+            val target = _aliases.value[current] ?: break
+            if (!seen.add(target)) break
+            current = target
+            hops++
+        }
+        return current
+    }
+
+    /** The canonical code a variant maps to, or null if the code is canonical. */
+    fun canonicalFor(code: String): String? = _aliases.value[normalizeCode(code)]
+
+    /** True when the code is registered as a variant of another course. */
+    fun isVariant(code: String): Boolean =
+        normalizeCode(code).isNotBlank() && _aliases.value.containsKey(normalizeCode(code))
+
+    /** Add a variant → canonical alias (Firestore first, then in-memory). */
+    suspend fun addAlias(variant: String, canonical: String) {
+        val v = normalizeCode(variant)
+        val c = normalizeCode(canonical)
+        if (v.isBlank() || c.isBlank() || v == c) return
+        val displayV = variant.trim().uppercase(Locale.ROOT)
+        val displayC = canonical.trim().uppercase(Locale.ROOT)
+        try {
+            firestore.collection(ALIAS_COL).document(v).set(
+                mapOf("variant" to displayV, "canonical" to displayC)
+            ).await()
+            Log.d(TAG, "Saved alias $displayV -> $displayC")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save alias $displayV -> $displayC", e)
+        }
+        _aliases.value = _aliases.value + (v to c)
+    }
+
+    /** Remove a variant → canonical alias. */
+    suspend fun removeAlias(variant: String) {
+        val v = normalizeCode(variant)
+        try {
+            firestore.collection(ALIAS_COL).document(v).delete().await()
+            Log.d(TAG, "Removed alias $v")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to remove alias $v", e)
+        }
+        _aliases.value = _aliases.value - v
+    }
+
+    /**
+     * Update a course in place (code/name/category/level/semester).
+     * When the code changes: writes the course under the new code, deletes the
+     * old doc, and records oldCode → newCode as an alias so existing resources
+     * filed under the old code keep appearing on the new shelf (no data loss,
+     * no re-linking). The level/semester move with the record, so the
+     * workspace level dropdown is unaffected.
+     */
+    suspend fun updateCourseCode(oldCode: String, updated: Course) {
+        val old = normalizeCode(oldCode)
+        val new = normalizeCode(updated.code)
+        if (new.isBlank()) return
+        if (old == new) {
+            addCourse(updated)
+            return
+        }
+        try {
+            val batch = firestore.batch()
+            batch.set(firestore.collection(COLLECTION).document(updated.code), updated)
+            batch.delete(firestore.collection(COLLECTION).document(oldCode))
+            batch.commit().await()
+            Log.d(TAG, "Updated course $oldCode -> ${updated.code}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update course $oldCode -> ${updated.code}", e)
+        }
+        addAlias(oldCode, updated.code)
+        _courses.value = _courses.value.filter { normalizeCode(it.code) != old } + updated
+    }
+
     /** Load all courses from Firestore. Seeds if empty. */
     suspend fun loadAll() {
+        // Alias table must be ready before resources are grouped by code
+        loadAliases()
         try {
             val snap = firestore.collection(COLLECTION).get().await()
 
@@ -93,10 +207,17 @@ object CourseRepository {
     fun normalizeCode(code: String): String =
         code.uppercase(Locale.ROOT).replace(" ", "")
 
-    /** Find a course by code (canonical, space-insensitive). */
+    /** Find a course by code (canonical, space-insensitive, alias-aware). */
     fun findCourse(code: String): Course? {
         val normalized = normalizeCode(code)
-        return _courses.value.find { normalizeCode(it.code) == normalized }
+        val direct = _courses.value.find { normalizeCode(it.code) == normalized }
+        if (direct != null) return direct
+        // Variant code (old CCMAS): resolve to the canonical course
+        val canonical = resolveCode(normalized)
+        if (canonical != normalized) {
+            return _courses.value.find { normalizeCode(it.code) == canonical }
+        }
+        return null
     }
 
     /** Get unique categories for a level + semester. */

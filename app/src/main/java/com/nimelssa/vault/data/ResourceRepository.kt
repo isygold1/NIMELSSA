@@ -33,6 +33,10 @@ object ResourceRepository {
 
     /** Load all resources from Firestore on app start. Merges old and new formats. */
     suspend fun loadAll() {
+        // Alias table must be ready before grouping: variant codes (old CCMAS)
+        // resolve to their canonical course so merged shelves form correctly.
+        CourseRepository.loadAliases()
+
         val map = mutableMapOf<String, MutableList<Resource>>()
 
         // 1. Load new-format resources/{autoId}
@@ -40,8 +44,9 @@ object ResourceRepository {
             val snap = firestore.collection(RESOURCES_COL).get().await()
             for (doc in snap.documents) {
                 val r = doc.toObject<Resource>()?.copy(id = doc.id) ?: continue
-                // Canonical key: "MLS 201" and "MLS201" must map to the same bucket
-                val key = if (r.courseCode.isNotBlank()) CourseRepository.normalizeCode(r.courseCode) else "__LEVEL__"
+                // Canonical key: "MLS 201" and "MLS201" must map to the same
+                // bucket; variant codes resolve to their canonical course.
+                val key = if (r.courseCode.isNotBlank()) CourseRepository.resolveCode(r.courseCode) else "__LEVEL__"
                 map.getOrPut(key) { mutableListOf() }.add(r)
             }
             Log.d(TAG, "Loaded ${snap.size()} resources from $RESOURCES_COL")
@@ -54,7 +59,7 @@ object ResourceRepository {
             val legacySnap = firestore.collection("course_resources").get().await()
             for (doc in legacySnap.documents) {
                 val code = doc.id
-                val key = CourseRepository.normalizeCode(code)
+                val key = CourseRepository.resolveCode(code)
                 val lnu = doc.getString("lectureNotesUrl") ?: ""
                 val pqu = doc.getString("pastQuestionsUrl") ?: ""
                 val tbu = doc.getString("textbookUrl") ?: ""
@@ -116,9 +121,9 @@ object ResourceRepository {
 
     // ── Query helpers ───────────────────────────────────────────
 
-    /** Get resources for a specific course code (canonical, space-insensitive). */
+    /** Get resources for a specific course code (canonical, alias-aware). */
     fun getForCourse(code: String): List<Resource> {
-        return _resources.value[CourseRepository.normalizeCode(code)] ?: emptyList()
+        return _resources.value[CourseRepository.resolveCode(code)] ?: emptyList()
     }
 
     /** Get resources for all courses in a level (including level-wide). */
@@ -144,14 +149,14 @@ object ResourceRepository {
             .filter { it.level == level && it.resourceType == "TB" }
     }
 
-    /** Check if a course has a specific resource type (canonical, space-insensitive). */
+    /** Check if a course has a specific resource type (canonical, alias-aware). */
     fun hasType(courseCode: String, type: String): Boolean {
-        return _resources.value[CourseRepository.normalizeCode(courseCode)]?.any { it.resourceType == type } == true
+        return _resources.value[CourseRepository.resolveCode(courseCode)]?.any { it.resourceType == type } == true
     }
 
-    /** Check if a course has any resources at all (canonical, space-insensitive). */
+    /** Check if a course has any resources at all (canonical, alias-aware). */
     fun hasAny(courseCode: String): Boolean {
-        val key = CourseRepository.normalizeCode(courseCode)
+        val key = CourseRepository.resolveCode(courseCode)
         return _resources.value.containsKey(key) &&
                _resources.value[key]?.isNotEmpty() == true
     }
@@ -159,7 +164,7 @@ object ResourceRepository {
     /** Find existing resource(s) for a course that match the given MD5 checksum. */
     fun findByMd5(courseCode: String, md5: String): List<Resource> {
         if (md5.isBlank()) return emptyList()
-        return (_resources.value[CourseRepository.normalizeCode(courseCode)] ?: emptyList())
+        return (_resources.value[CourseRepository.resolveCode(courseCode)] ?: emptyList())
             .filter { it.md5Checksum == md5 && it.md5Checksum.isNotBlank() }
     }
 
@@ -203,8 +208,8 @@ object ResourceRepository {
         try {
             val docRef = firestore.collection(RESOURCES_COL).add(data).await()
             val saved = toSave.copy(id = docRef.id)
-            // Update in-memory (canonical key)
-            val key = if (saved.courseCode.isNotBlank()) CourseRepository.normalizeCode(saved.courseCode) else "__LEVEL__"
+            // Update in-memory (canonical key — variant codes resolve to their shelf)
+            val key = if (saved.courseCode.isNotBlank()) CourseRepository.resolveCode(saved.courseCode) else "__LEVEL__"
             val current = _resources.value.toMutableMap()
             val list = (current[key] ?: emptyList()).toMutableList()
             list.add(saved)
@@ -214,7 +219,7 @@ object ResourceRepository {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to add resource", e)
             // Fallback: in-memory only
-            val key = if (toSave.courseCode.isNotBlank()) CourseRepository.normalizeCode(toSave.courseCode) else "__LEVEL__"
+            val key = if (toSave.courseCode.isNotBlank()) CourseRepository.resolveCode(toSave.courseCode) else "__LEVEL__"
             val current = _resources.value.toMutableMap()
             val list = (current[key] ?: emptyList()).toMutableList()
             list.add(toSave)
@@ -260,7 +265,7 @@ object ResourceRepository {
         }
 
         val current = _resources.value.toMutableMap()
-        current.remove(CourseRepository.normalizeCode(courseCode))
+        current.remove(CourseRepository.resolveCode(courseCode))
         _resources.value = current
     }
 }

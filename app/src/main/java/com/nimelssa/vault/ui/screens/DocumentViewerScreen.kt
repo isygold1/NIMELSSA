@@ -630,23 +630,61 @@ private fun ResourceListView(
         Spacer(modifier = Modifier.height(12.dp))
 
         if (resources.isNotEmpty()) {
+            // CCMAS sections: files filed under a variant (old) code vs the
+            // current code. Headers only render when a shelf holds both
+            // generations — single-generation shelves stay clean.
+            val currentSection = mutableListOf<Resource>()
+            val previousSection = mutableListOf<Resource>()
             resources.forEach { resource ->
-                val localFile = OfflineManager.getLocalFile(course.code, resource.resourceType.lowercase())
-                // Approved resources carry masterUrl, but legacy or edge-case
-                // docs may only have fileId — build a viewable URL either way
-                // so no approved resource ever opens dead.
-                val url = resourceUrl(resource)
-                ResourceCard(
-                    icon = resource.icon,
-                    title = resource.fileName.ifBlank { resource.label.ifBlank { resource.resourceLabel } },
-                    subtitle = "${resource.resourceLabel}" +
-                        if (resource.submittedBy.isNotBlank()) " • by ${resource.submittedBy}" else "",
-                    notes = resource.notes,
-                    isAvailableOffline = localFile != null,
-                    isOnline = isOnline,
-                    onOpen = { onOpenResource(resource, url, localFile?.let { File(it) }) }
+                val stored = CourseRepository.normalizeCode(resource.courseCode)
+                val canonical = CourseRepository.resolveCode(resource.courseCode)
+                if (stored.isNotBlank() && stored != canonical) {
+                    previousSection.add(resource)
+                } else {
+                    currentSection.add(resource)
+                }
+            }
+            val showSections = currentSection.isNotEmpty() && previousSection.isNotEmpty()
+
+            if (showSections) {
+                val prevCodes = previousSection.map { it.courseCode }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .joinToString(", ")
+                Text(
+                    text = "📁 Current — ${course.code}",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
+                ResourceListSection(
+                    course = course,
+                    resources = currentSection,
+                    isOnline = isOnline,
+                    onOpenResource = onOpenResource
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "📁 Previous CCMAS — $prevCodes",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                ResourceListSection(
+                    course = course,
+                    resources = previousSection,
+                    isOnline = isOnline,
+                    onOpenResource = onOpenResource
+                )
+            } else {
+                ResourceListSection(
+                    course = course,
+                    resources = resources,
+                    isOnline = isOnline,
+                    onOpenResource = onOpenResource
+                )
             }
         } else {
             Card(
@@ -714,6 +752,37 @@ private fun ResourceListView(
         }
 
         Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+/**
+ * One CCMAS generation's files: renders the resource cards for a section of
+ * the shelf (current code or previous/variant codes).
+ */
+@Composable
+private fun ResourceListSection(
+    course: com.nimelssa.vault.data.Course,
+    resources: List<Resource>,
+    isOnline: Boolean,
+    onOpenResource: (Resource, String, File?) -> Unit
+) {
+    resources.forEach { resource ->
+        val localFile = OfflineManager.getLocalFile(course.code, resource.resourceType.lowercase())
+        // Approved resources carry masterUrl, but legacy or edge-case
+        // docs may only have fileId — build a viewable URL either way
+        // so no approved resource ever opens dead.
+        val url = resourceUrl(resource)
+        ResourceCard(
+            icon = resource.icon,
+            title = resource.fileName.ifBlank { resource.label.ifBlank { resource.resourceLabel } },
+            subtitle = "${resource.resourceLabel}" +
+                if (resource.submittedBy.isNotBlank()) " • by ${resource.submittedBy}" else "",
+            notes = resource.notes,
+            isAvailableOffline = localFile != null,
+            isOnline = isOnline,
+            onOpen = { onOpenResource(resource, url, localFile?.let { File(it) }) }
+        )
+        Spacer(modifier = Modifier.height(8.dp))
     }
 }
 

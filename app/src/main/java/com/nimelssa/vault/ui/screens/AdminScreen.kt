@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -34,6 +35,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -104,6 +106,8 @@ fun AdminScreen(
 
     val scope = rememberCoroutineScope()
     var showAddForm by remember { mutableStateOf(false) }
+    var showLinkForm by remember { mutableStateOf(false) }
+    var editingCourse by remember { mutableStateOf<Course?>(null) }
 
     // ── Filter proposals for rep's level ──
     // Proposals are routed by targetLevel (set by student at submission time).
@@ -218,11 +222,22 @@ fun AdminScreen(
         }
 
         // ── Course Inventory ──
-        Text(
-            text = "📚 Course Inventory ${if (!isAdmin) "(Level $repLevel only)" else ""}",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "📚 Course Inventory ${if (!isAdmin) "(Level $repLevel only)" else ""}",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            if (canManage) {
+                TextButton(onClick = { showLinkForm = true }) {
+                    Text("🔗 Link Code", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(8.dp))
 
         val displayCourses = if (isAdmin) allCourses
@@ -236,9 +251,27 @@ fun AdminScreen(
             CourseManageRow(
                 course = course,
                 canDelete = isAdmin || course.level == repLevel,
-                onPreview = { onPreview(course, null) }
+                onPreview = { onPreview(course, null) },
+                onEdit = { editingCourse = course }
             )
             Spacer(modifier = Modifier.height(6.dp))
+        }
+
+        // ── Edit course dialog (CCMAS re-code keeps files, links old code) ──
+        editingCourse?.let { course ->
+            EditCourseDialog(
+                course = course,
+                onDismiss = { editingCourse = null },
+                onSaved = { editingCourse = null }
+            )
+        }
+
+        // ── Link course-code dialog (variant → canonical) ──
+        if (showLinkForm) {
+            LinkCodeDialog(
+                onDismiss = { showLinkForm = false },
+                onLinked = { showLinkForm = false }
+            )
         }
     }
 }
@@ -527,8 +560,9 @@ private fun UnmatchedAssignmentCard(
     // Derive suggested courses based on typed code
     val suggestions = remember(courseCode, allCourses) {
         if (courseCode.length >= 2) {
-            // Compare in canonical form so "MLS201" matches seed code "MLS 201"
-            val query = CourseRepository.normalizeCode(courseCode)
+            // Compare in canonical form so "MLS201" matches seed code "MLS 201";
+            // variant codes (old CCMAS) resolve to their canonical course first.
+            val query = CourseRepository.resolveCode(courseCode)
             allCourses.filter { CourseRepository.normalizeCode(it.code).contains(query) }
                 .map { it.code }
                 .distinct()
@@ -1111,7 +1145,8 @@ private fun truncateUrl(url: String): String {
 private fun CourseManageRow(
     course: Course,
     canDelete: Boolean,
-    onPreview: () -> Unit
+    onPreview: () -> Unit,
+    onEdit: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val resourceMap by ResourceRepository.resources.collectAsState()
@@ -1176,6 +1211,13 @@ private fun CourseManageRow(
                         contentPadding = ButtonDefaults.ButtonWithIconContentPadding
                     ) { Text("👁️", style = MaterialTheme.typography.labelSmall) }
                 }
+                Text(
+                    text = "✏️",
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .clickable(onClick = onEdit),
+                    style = MaterialTheme.typography.titleMedium
+                )
                 if (canDelete) {
                     Text(
                         text = "🗑️",
@@ -1338,4 +1380,295 @@ private fun AddCourseForm(
             }
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  EDIT COURSE DIALOG  (CCMAS re-code)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Edit a course in place. Changing the code never deletes or re-links files:
+ * the old code is recorded as an alias so existing resources keep appearing
+ * on the new shelf, and the level/semester move with the record (workspace
+ * level dropdown unaffected). Collision guard: the new code must not already
+ * belong to a different course or be linked to one.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditCourseDialog(
+    course: Course,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var code by remember(course) { mutableStateOf(course.code) }
+    var name by remember(course) { mutableStateOf(course.name) }
+    var category by remember(course) { mutableStateOf(course.category) }
+    var level by remember(course) { mutableStateOf(course.level) }
+    var semester by remember(course) { mutableIntStateOf(course.semester) }
+    var levelExpanded by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    val codeChanged = CourseRepository.normalizeCode(code) != CourseRepository.normalizeCode(course.code)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("✏️ Edit Course") },
+        text = {
+            Column(verticalScroll(rememberScrollState())) {
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { code = it.uppercase() },
+                    label = { Text("Course Code") },
+                    placeholder = { Text("e.g., MLS 301") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Course Title") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = category,
+                    onValueChange = { category = it },
+                    label = { Text("Category") },
+                    placeholder = { Text("e.g., CHEMICAL PATHOLOGY") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    ExposedDropdownMenuBox(
+                        expanded = levelExpanded,
+                        onExpandedChange = { levelExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = "$level Level",
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = levelExpanded) },
+                            modifier = Modifier.weight(1f).menuAnchor(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = levelExpanded,
+                            onDismissRequest = { levelExpanded = false }
+                        ) {
+                            Levels.ALL.forEach { l ->
+                                DropdownMenuItem(
+                                    text = { Text("${l} Level") },
+                                    onClick = { level = l; levelExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    SingleChoiceSegmentedButtonRow {
+                        SegmentedButton(
+                            selected = semester == 1,
+                            onClick = { semester = 1 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                            colors = SegmentedButtonDefaults.colors(
+                                activeContainerColor = MaterialTheme.colorScheme.primary,
+                                activeContentColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                        ) { Text("1st") }
+                        SegmentedButton(
+                            selected = semester == 2,
+                            onClick = { semester = 2 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                            colors = SegmentedButtonDefaults.colors(
+                                activeContainerColor = MaterialTheme.colorScheme.primary,
+                                activeContentColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                        ) { Text("2nd") }
+                    }
+                }
+                if (codeChanged) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "↔ Changes keep all existing files: the old code " +
+                               "'${course.code}' is linked automatically, so resources " +
+                               "filed under it still show on the new shelf.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                error?.let {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (code.isBlank() || name.isBlank()) {
+                        error = "Course code and title are required."
+                        return@TextButton
+                    }
+                    val oldNorm = CourseRepository.normalizeCode(course.code)
+                    val newNorm = CourseRepository.normalizeCode(code)
+                    val existing = CourseRepository.findCourse(code)
+                    val linkedCanonical = CourseRepository.canonicalFor(code)
+                    if (existing != null && CourseRepository.normalizeCode(existing.code) != oldNorm) {
+                        error = "'${existing.code}' already belongs to '${existing.name}'. " +
+                                "Use 'Link Code' to merge it into this course instead."
+                        return@TextButton
+                    }
+                    if (linkedCanonical != null && linkedCanonical != oldNorm) {
+                        error = "'$code' is already linked to another course. " +
+                                "Remove that link before using it here."
+                        return@TextButton
+                    }
+                    scope.launch {
+                        saving = true
+                        CourseRepository.updateCourseCode(
+                            course.code,
+                            Course(
+                                code = code.trim().uppercase(),
+                                name = name.trim(),
+                                category = category.trim().ifBlank { "GENERAL" },
+                                level = level,
+                                semester = semester
+                            )
+                        )
+                        saving = false
+                        onSaved()
+                    }
+                },
+                enabled = !saving
+            ) { Text(if (saving) "Saving…" else "Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LINK COURSE-CODE DIALOG  (variant → canonical)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Manually link a variant course code (e.g. an old CCMAS code that never
+ * existed in the catalog) to a canonical course. Resources filed under the
+ * variant code then appear on the canonical course's shelf, and new
+ * submissions using the variant code auto-match — no course deletion needed.
+ */
+@Composable
+private fun LinkCodeDialog(
+    onDismiss: () -> Unit,
+    onLinked: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val allCourses by CourseRepository.courses.collectAsState()
+    var variant by remember { mutableStateOf("") }
+    var targetCode by remember { mutableStateOf("") }
+    var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    val targetSuggestions = remember(targetCode, allCourses) {
+        if (targetCode.length >= 2) {
+            val query = CourseRepository.resolveCode(targetCode)
+            allCourses.filter { CourseRepository.normalizeCode(it.code).contains(query) }
+                .map { it.code }
+                .distinct()
+                .take(6)
+        } else emptyList()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("🔗 Link Course Code") },
+        text = {
+            Column(verticalScroll(rememberScrollState())) {
+                Text(
+                    text = "Old/alternate code → course it actually belongs to. " +
+                           "Files filed under the old code will appear on the target's shelf.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = variant,
+                    onValueChange = { variant = it.uppercase() },
+                    label = { Text("Variant code (as filed)") },
+                    placeholder = { Text("e.g., MLS 301") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = targetCode,
+                    onValueChange = { targetCode = it.uppercase() },
+                    label = { Text("Target course code") },
+                    placeholder = { Text("e.g., MLS 311") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                if (targetSuggestions.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Suggestions: ${targetSuggestions.joinToString(", ")}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                error?.let {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (variant.isBlank() || targetCode.isBlank()) {
+                        error = "Both codes are required."
+                        return@TextButton
+                    }
+                    val target = CourseRepository.findCourse(targetCode)
+                    if (target == null) {
+                        error = "Target course not found — add it via 'Add New Course' first."
+                        return@TextButton
+                    }
+                    if (CourseRepository.normalizeCode(variant) == CourseRepository.normalizeCode(target.code)) {
+                        error = "A course cannot be linked to itself."
+                        return@TextButton
+                    }
+                    scope.launch {
+                        saving = true
+                        CourseRepository.addAlias(variant, target.code)
+                        saving = false
+                        onLinked()
+                    }
+                },
+                enabled = !saving
+            ) { Text(if (saving) "Linking…" else "Link") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
