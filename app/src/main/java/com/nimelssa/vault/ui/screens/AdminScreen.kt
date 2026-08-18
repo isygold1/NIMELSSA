@@ -228,7 +228,8 @@ fun AdminScreen(
         val displayCourses = if (isAdmin) allCourses
                              else allCourses.filter { it.level == repLevel }
         val coursesWithResources = displayCourses.filter { course ->
-            resourceMap.containsKey(course.code) && resourceMap[course.code]!!.isNotEmpty()
+            val key = CourseRepository.normalizeCode(course.code)
+            resourceMap.containsKey(key) && resourceMap[key]!!.isNotEmpty()
         }
 
         coursesWithResources.forEach { course ->
@@ -1112,7 +1113,7 @@ private fun CourseManageRow(
 ) {
     val scope = rememberCoroutineScope()
     val resourceMap by ResourceRepository.resources.collectAsState()
-    val courseResources = resourceMap[course.code] ?: emptyList()
+    val courseResources = resourceMap[CourseRepository.normalizeCode(course.code)] ?: emptyList()
     val hasNotes = courseResources.any { it.resourceType == "LN" }
     val hasPqs = courseResources.any { it.resourceType == "PQ" }
     val hasTb = courseResources.any { it.resourceType == "TB" }

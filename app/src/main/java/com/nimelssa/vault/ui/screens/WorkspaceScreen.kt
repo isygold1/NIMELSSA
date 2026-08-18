@@ -75,7 +75,12 @@ fun WorkspaceScreen(
     val resourceMap by ResourceRepository.resources.collectAsState()
     val courses = allCourses
         .filter { it.level == selectedLevel && it.semester == selectedSemester }
-        .filter { resourceMap.containsKey(it.code) && resourceMap[it.code]!!.isNotEmpty() }
+        // Keys in ResourceRepository.resources are canonical (no spaces);
+        // seed codes like "MLS 201" must be normalized before lookup.
+        .filter {
+            val key = CourseRepository.normalizeCode(it.code)
+            resourceMap.containsKey(key) && resourceMap[key]!!.isNotEmpty()
+        }
     val categories = courses.map { it.category }.distinct()
     val levelTextbooks = ResourceRepository.getLevelTextbooks(selectedLevel)
 
@@ -286,7 +291,7 @@ fun WorkspaceScreen(
 
                 val categoryCourses = courses.filter { it.category == category }
                 items(categoryCourses) { course ->
-                    val courseResources = resourceMap[course.code] ?: emptyList()
+                    val courseResources = resourceMap[CourseRepository.normalizeCode(course.code)] ?: emptyList()
             CourseCard(
                 course = course,
                 resources = courseResources,

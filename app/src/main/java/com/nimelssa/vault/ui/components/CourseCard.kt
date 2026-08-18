@@ -37,6 +37,16 @@ fun CourseCard(
     val hasTb = resources.any { it.resourceType == "TB" }
     val hasAny = hasNotes || hasPqs || hasTb
 
+    // Honest status label: "Link Mode" only when master links exist; if files
+    // are present (Drive fileId) but no master link, say how many are linked —
+    // never "No resources yet" on a populated card.
+    val linkMode = resources.any { it.masterUrl.isNotBlank() }
+    val statusLabel = when {
+        linkMode -> "🌐 Link Mode"
+        hasAny -> "🔗 ${resources.size} file${if (resources.size == 1) "" else "s"} linked"
+        else -> "📄 No resources yet"
+    }
+
     // ── Compute honest progress from available resource types ──
     // For a regular course: % of the 3 resource types (LN/PQ/TB) available.
     // For level textbooks (special card): 100% if any exist, else 0%.
@@ -75,12 +85,9 @@ fun CourseCard(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = if (resources.any { it.masterUrl.isNotBlank() }) "🌐 Link Mode"
-                               else "📄 No resources yet",
+                        text = statusLabel,
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (resources.any { it.masterUrl.isNotBlank() })
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                                else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 RadialProgress(percentage = displayProgress)
