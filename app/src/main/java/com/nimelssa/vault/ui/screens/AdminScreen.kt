@@ -523,7 +523,9 @@ private fun UnmatchedAssignmentCard(
     // Derive suggested courses based on typed code
     val suggestions = remember(courseCode, allCourses) {
         if (courseCode.length >= 2) {
-            allCourses.filter { it.code.contains(courseCode, ignoreCase = true) }
+            // Compare in canonical form so "MLS201" matches seed code "MLS 201"
+            val query = CourseRepository.normalizeCode(courseCode)
+            allCourses.filter { CourseRepository.normalizeCode(it.code).contains(query) }
                 .map { it.code }
                 .distinct()
                 .take(6)
@@ -532,7 +534,7 @@ private fun UnmatchedAssignmentCard(
 
     // Determine if the typed code looks like an existing course
     val existingCourse = remember(courseCode, allCourses) {
-        allCourses.find { it.code.equals(courseCode, ignoreCase = true) }
+        CourseRepository.findCourse(courseCode)
     }
 
     Card(
@@ -792,7 +794,7 @@ private fun UnmatchedAssignmentCard(
                                 courseCode = courseCode,
                                 level = level.ifBlank {
                                     // Infer from existing course or default to 200
-                                    allCourses.find { it.code == courseCode }?.level ?: "200"
+                                    CourseRepository.findCourse(courseCode)?.level ?: "200"
                                 },
                                 semester = semester
                             )
@@ -844,7 +846,14 @@ private suspend fun scanProposal(proposal: Proposal) {
         // give the AI much more context than filenames alone
         val parseResult = FilenameParser.parseWithPath(file.name, file.path)
 
-        if (parseResult.courseCode != null && parseResult.confidence != FilenameParser.Confidence.NONE) {
+        // Auto-match only on HIGH/MEDIUM confidence. LOW (e.g. unrecognized
+        // prefix like "WA000" from "DOC-...-WA0003") and NONE go to the
+        // rep's manual-assign list instead of silently becoming resources.
+        val autoMatch = parseResult.courseCode != null &&
+            (parseResult.confidence == FilenameParser.Confidence.HIGH ||
+             parseResult.confidence == FilenameParser.Confidence.MEDIUM)
+
+        if (autoMatch) {
             val resourceLabel = when (parseResult.resourceType) {
                 "LN" -> "Lecture Notes"
                 "PQ" -> "Past Questions"
@@ -910,8 +919,7 @@ private suspend fun approveProposal(
 
     // ── 1. Convert manual assignments to AiMatchedItem ──
     val manualMatched = manualAssignments.values.map { assignment ->
-        val allCourses = CourseRepository.courses.value
-        val existing = allCourses.find { it.code == assignment.courseCode }
+        val existing = CourseRepository.findCourse(assignment.courseCode)
         val resourceLabel = when (assignment.resourceType) {
             "LN" -> "Lecture Notes"
             "PQ" -> "Past Questions"

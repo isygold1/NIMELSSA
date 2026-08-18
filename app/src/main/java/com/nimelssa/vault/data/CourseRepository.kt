@@ -2,6 +2,7 @@ package com.nimelssa.vault.data
 
 import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
+import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -85,9 +86,17 @@ object CourseRepository {
         }
     }
 
-    /** Find a course by code. */
+    /**
+     * Canonical course-code form: uppercase, no spaces.
+     * ("MLS 201" → "MLS201") — lets lookups match codes written either way.
+     */
+    fun normalizeCode(code: String): String =
+        code.uppercase(Locale.ROOT).replace(" ", "")
+
+    /** Find a course by code (canonical, space-insensitive). */
     fun findCourse(code: String): Course? {
-        return _courses.value.find { it.code == code }
+        val normalized = normalizeCode(code)
+        return _courses.value.find { normalizeCode(it.code) == normalized }
     }
 
     /** Get unique categories for a level + semester. */
@@ -109,10 +118,10 @@ object CourseRepository {
             Log.e(TAG, "Failed to save course ${course.code} to Firestore", e)
         }
 
-        // Update in-memory
-        val existing = _courses.value.find { it.code == course.code }
+        // Update in-memory (canonical match so "MLS201" == "MLS 201")
+        val existing = _courses.value.find { normalizeCode(it.code) == normalizeCode(course.code) }
         _courses.value = if (existing != null) {
-            _courses.value.map { if (it.code == course.code) course else it }
+            _courses.value.map { if (normalizeCode(it.code) == normalizeCode(course.code)) course else it }
         } else {
             _courses.value + course
         }
@@ -127,7 +136,7 @@ object CourseRepository {
             Log.e(TAG, "Failed to remove course $code", e)
         }
 
-        _courses.value = _courses.value.filter { it.code != code }
+        _courses.value = _courses.value.filter { normalizeCode(it.code) != normalizeCode(code) }
     }
 
     // ── Seeding ──

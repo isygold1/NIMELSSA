@@ -47,10 +47,12 @@ object FilenameParser {
 
     // Keywords that hint at resource type
     private val LN_KEYWORDS = listOf(
-        "note", "lecture", "slide", "classnote", "lesson", "module", "tutorial", "handout"
+        "note", "lecture", "slide", "classnote", "lesson", "module", "tutorial", "handout",
+        "slt", "nslt"
     )
     private val PQ_KEYWORDS = listOf(
-        "past", "question", "exam", "test", "pq", "practice", "quiz", "assignment"
+        "past", "question", "exam", "test", "pq", "practice", "quiz", "assignment",
+        "mcq", "q&a"
     )
     private val TB_KEYWORDS = listOf(
         "textbook", "book", "reference", "tb", "manual", "guide", "handbook", "scholar"
@@ -99,15 +101,19 @@ object FilenameParser {
      */
     fun parseWithPath(fileName: String, path: String): ParseResult {
         val name = fileName.trim()
-        val pathLower = path.lowercase(Locale.ROOT)
 
         // ── Extract level from path ──
         // Looks for "100 level", "200L", "300 Level" in the path
         val levelFromPath = extractLevelFromPath(path)
 
         // ── Extract resource type from path ──
-        // Looks for "Lecture Notes", "Past Questions", "Textbooks" in path segments
+        // Only segments at-or-after the level folder are considered, so a root
+        // folder like "TEXTBOOKS*" can't force TB onto everything beneath it.
         val typeFromPath = extractTypeFromPath(path)
+
+        // ── Extract semester from path ──
+        // Looks for "first semester", "2nd semester" etc. in the path
+        val semesterFromPath = extractSemesterFromPath(path)
 
         // ── Extract course code from path ──
         // Looks for "MLS 201", "CSC 101" in path segments
@@ -122,7 +128,7 @@ object FilenameParser {
                 courseCode = strictResult.code,
                 resourceType = typeFromPath ?: strictResult.type,
                 level = level,
-                semester = inferSemester(name, strictResult.code),
+                semester = semesterFromPath ?: inferSemester(name, strictResult.code),
                 confidence = Confidence.HIGH,
                 reason = "Strict filename: ${strictResult.code}, type=${strictResult.type}" +
                         (if (levelFromPath != null) ", level from path" else "")
@@ -133,13 +139,56 @@ object FilenameParser {
         val looseResult = tryLooseMatch(name)
         if (looseResult != null) {
             val level = levelFromPath ?: inferLevelFromCode(looseResult.code)
+
+            // Folder agrees with the filename code → the curated folder name
+            // confirms the match even when the filename prefix is unrecognized
+            // (e.g. "COS101 CBT CA Questions.pdf" inside the COS101 folder).
+            if (codeFromPath == looseResult.code) {
+                return ParseResult(
+                    courseCode = looseResult.code,
+                    resourceType = typeFromPath ?: looseResult.type,
+                    level = level,
+                    semester = semesterFromPath ?: inferSemester(name, looseResult.code),
+                    confidence = Confidence.MEDIUM,
+                    reason = "Loose filename + folder agree: ${looseResult.code}"
+                )
+            }
+
+            if (codeFromPath != null) {
+                // Filename and folder disagree about the course.
+                if (looseResult.confidence == Confidence.LOW) {
+                    // Unknown-prefix filename code (e.g. "WA000" from
+                    // "DOC-20251102-WA0003..pptx") — the curated folder name is
+                    // the stronger signal; trust it over the filename.
+                    return ParseResult(
+                        courseCode = codeFromPath,
+                        resourceType = typeFromPath ?: looseResult.type,
+                        level = level,
+                        semester = semesterFromPath ?: inferSemester(name, codeFromPath),
+                        confidence = if (levelFromPath != null) Confidence.MEDIUM else Confidence.LOW,
+                        reason = "Folder name $codeFromPath wins over unrecognized filename code ${looseResult.code}"
+                    )
+                }
+                // Known-prefix disagreement is truly ambiguous (e.g. "MLS 210"
+                // inside "MLS 201") — don't guess, surface both candidates.
+                return ParseResult(
+                    courseCode = null,
+                    resourceType = typeFromPath ?: looseResult.type,
+                    level = level,
+                    semester = semesterFromPath ?: inferSemester(name, looseResult.code),
+                    confidence = Confidence.NONE,
+                    reason = "Ambiguous: filename says ${looseResult.code} but folder says $codeFromPath"
+                )
+            }
+
             return ParseResult(
                 courseCode = looseResult.code,
                 resourceType = typeFromPath ?: looseResult.type,
                 level = level,
-                semester = inferSemester(name, looseResult.code),
-                confidence = if (levelFromPath != null) Confidence.MEDIUM else looseResult.confidence,
+                semester = semesterFromPath ?: inferSemester(name, looseResult.code),
+                confidence = looseResult.confidence,
                 reason = "Loose filename: ${looseResult.code}" +
+                        (if (looseResult.confidence == Confidence.LOW) " (unrecognized code prefix)" else "") +
                         (if (typeFromPath != null) ", type from path" else "") +
                         (if (levelFromPath != null) ", level from path" else "")
             )
@@ -151,9 +200,10 @@ object FilenameParser {
                 courseCode = codeFromPath,
                 resourceType = typeFromPath ?: "OT",
                 level = levelFromPath ?: inferLevelFromCode(codeFromPath),
-                semester = inferSemester(name, codeFromPath),
+                semester = semesterFromPath ?: inferSemester(name, codeFromPath),
                 confidence = if (levelFromPath != null) Confidence.MEDIUM else Confidence.LOW,
-                reason = "Course code from folder name: $codeFromPath"
+                reason = "Course code from folder name: $codeFromPath" +
+                        (if (levelFromPath != null) ", level from path" else "")
             )
         }
 
@@ -162,7 +212,7 @@ object FilenameParser {
             courseCode = null,
             resourceType = typeFromPath,
             level = levelFromPath,
-            semester = null,
+            semester = semesterFromPath,
             confidence = Confidence.NONE,
             reason = "Could not extract course code from filename or path"
         )
@@ -183,16 +233,26 @@ object FilenameParser {
 
     /**
      * Try the loose fuzzy match.
+     *
+     * Word-boundary guard: skips matches that are glued to the middle of a word
+     * (e.g. "TION" inside "Nutrition 300l" → rejects phantom codes like TION300).
      */
     private fun tryLooseMatch(name: String): LooseMatch? {
-        val codeMatch = LOOSE_CODE_REGEX.find(name) ?: return null
-        val prefix = codeMatch.groupValues[1].uppercase()
-        val number = codeMatch.groupValues[2]
-        val mappedPrefix = KNOWN_PREFIXES[prefix] ?: prefix
-        val code = "$mappedPrefix$number"
-        val type = inferType(name)
-        val confidence = if (prefix in KNOWN_PREFIXES) Confidence.MEDIUM else Confidence.LOW
-        return LooseMatch(code = code, type = type, confidence = confidence)
+        for (codeMatch in LOOSE_CODE_REGEX.findAll(name)) {
+            // The letters must start at the beginning of the name or after a non-letter
+            val start = codeMatch.range.first
+            val precededByLetter = start > 0 && name[start - 1].isLetter()
+            if (precededByLetter) continue
+
+            val prefix = codeMatch.groupValues[1].uppercase()
+            val number = codeMatch.groupValues[2]
+            val mappedPrefix = KNOWN_PREFIXES[prefix] ?: prefix
+            val code = "$mappedPrefix$number"
+            val type = inferType(name)
+            val confidence = if (prefix in KNOWN_PREFIXES) Confidence.MEDIUM else Confidence.LOW
+            return LooseMatch(code = code, type = type, confidence = confidence)
+        }
+        return null
     }
 
     /**
@@ -208,15 +268,52 @@ object FilenameParser {
     /**
      * Extract resource type from folder path segments.
      * Matches "Lecture Notes", "Past Questions", "Textbooks", etc.
+     *
+     * Only segments at-or-after the level folder (e.g. "200 level") are
+     * inspected. This prevents a root-level folder named "TEXTBOOKS*" from
+     * tagging EVERY file beneath it as TB when the real type is said by the
+     * filename (e.g. ".../TEXTBOOKS*/300 level/MLS 301/Notes.pdf" → LN).
      */
     private fun extractTypeFromPath(path: String): String? {
         val lower = path.lowercase(Locale.ROOT)
         val segments = lower.split("/")
-        for (seg in segments) {
-            val trimmed = seg.trim()
+        val levelRegex = Regex("""(\d{3})\s*(level|l)\b""")
+
+        // Find the first segment containing a level marker; scan from there.
+        var startIndex = 0
+        for ((i, seg) in segments.withIndex()) {
+            if (levelRegex.containsMatchIn(seg.trim())) {
+                startIndex = i
+                break
+            }
+        }
+
+        for (i in startIndex until segments.size) {
+            val trimmed = segments[i].trim()
             if (trimmed.contains("lecture") || trimmed.contains("note")) return "LN"
             if (trimmed.contains("past") || trimmed.contains("question") || trimmed.contains("exam")) return "PQ"
             if (trimmed.contains("textbook") || trimmed.contains("book") || trimmed.contains("reference")) return "TB"
+        }
+        return null
+    }
+
+    /**
+     * Extract semester (1 or 2) from folder path segments.
+     * Matches "first semester", "1st semester", "second semester", "2nd semester".
+     */
+    private fun extractSemesterFromPath(path: String): Int? {
+        val lower = path.lowercase(Locale.ROOT)
+        val segments = lower.split("/")
+        for (seg in segments) {
+            val trimmed = seg.trim()
+            when {
+                trimmed.contains("first semester") ||
+                    trimmed.contains("1st semester") ||
+                    trimmed.contains("semester 1") -> return 1
+                trimmed.contains("second semester") ||
+                    trimmed.contains("2nd semester") ||
+                    trimmed.contains("semester 2") -> return 2
+            }
         }
         return null
     }

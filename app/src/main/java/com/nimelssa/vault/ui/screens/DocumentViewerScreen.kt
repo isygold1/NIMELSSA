@@ -66,10 +66,9 @@ fun DocumentViewerScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val allCourses by CourseRepository.courses.collectAsState()
     val resourceMap by ResourceRepository.resources.collectAsState()
-    val course = allCourses.find { it.code == courseCode }
-    val allResources = resourceMap[courseCode] ?: emptyList()
+    val course = CourseRepository.findCourse(courseCode)
+    val allResources = resourceMap[CourseRepository.normalizeCode(courseCode)] ?: emptyList()
     val resources = if (initialResourceType != null)
         allResources.filter { it.resourceType == initialResourceType }
     else allResources

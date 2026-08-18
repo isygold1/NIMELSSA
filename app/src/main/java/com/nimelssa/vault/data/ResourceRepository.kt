@@ -40,7 +40,8 @@ object ResourceRepository {
             val snap = firestore.collection(RESOURCES_COL).get().await()
             for (doc in snap.documents) {
                 val r = doc.toObject<Resource>()?.copy(id = doc.id) ?: continue
-                val key = if (r.courseCode.isNotBlank()) r.courseCode else "__LEVEL__"
+                // Canonical key: "MLS 201" and "MLS201" must map to the same bucket
+                val key = if (r.courseCode.isNotBlank()) CourseRepository.normalizeCode(r.courseCode) else "__LEVEL__"
                 map.getOrPut(key) { mutableListOf() }.add(r)
             }
             Log.d(TAG, "Loaded ${snap.size()} resources from $RESOURCES_COL")
@@ -53,6 +54,7 @@ object ResourceRepository {
             val legacySnap = firestore.collection("course_resources").get().await()
             for (doc in legacySnap.documents) {
                 val code = doc.id
+                val key = CourseRepository.normalizeCode(code)
                 val lnu = doc.getString("lectureNotesUrl") ?: ""
                 val pqu = doc.getString("pastQuestionsUrl") ?: ""
                 val tbu = doc.getString("textbookUrl") ?: ""
@@ -60,21 +62,21 @@ object ResourceRepository {
                 val notes = doc.getString("notes") ?: ""
 
                 // Only migrate if not already migrated (no resources for this code yet)
-                if (code.isNotBlank() && !map.containsKey(code)) {
+                if (key.isNotBlank() && !map.containsKey(key)) {
                     if (lnu.isNotBlank()) {
-                        map.getOrPut(code) { mutableListOf() }.add(
+                        map.getOrPut(key) { mutableListOf() }.add(
                             Resource(courseCode = code, resourceType = "LN", masterUrl = lnu,
                                      submittedBy = sub, notes = notes, label = "Lecture Notes")
                         )
                     }
                     if (pqu.isNotBlank()) {
-                        map.getOrPut(code) { mutableListOf() }.add(
+                        map.getOrPut(key) { mutableListOf() }.add(
                             Resource(courseCode = code, resourceType = "PQ", masterUrl = pqu,
                                      submittedBy = sub, notes = notes, label = "Past Questions")
                         )
                     }
                     if (tbu.isNotBlank()) {
-                        map.getOrPut(code) { mutableListOf() }.add(
+                        map.getOrPut(key) { mutableListOf() }.add(
                             Resource(courseCode = code, resourceType = "TB", masterUrl = tbu,
                                      submittedBy = sub, notes = notes, label = "Textbook")
                         )
@@ -114,9 +116,9 @@ object ResourceRepository {
 
     // ── Query helpers ───────────────────────────────────────────
 
-    /** Get resources for a specific course code. */
+    /** Get resources for a specific course code (canonical, space-insensitive). */
     fun getForCourse(code: String): List<Resource> {
-        return _resources.value[code] ?: emptyList()
+        return _resources.value[CourseRepository.normalizeCode(code)] ?: emptyList()
     }
 
     /** Get resources for all courses in a level (including level-wide). */
@@ -142,21 +144,22 @@ object ResourceRepository {
             .filter { it.level == level && it.resourceType == "TB" }
     }
 
-    /** Check if a course has a specific resource type. */
+    /** Check if a course has a specific resource type (canonical, space-insensitive). */
     fun hasType(courseCode: String, type: String): Boolean {
-        return _resources.value[courseCode]?.any { it.resourceType == type } == true
+        return _resources.value[CourseRepository.normalizeCode(courseCode)]?.any { it.resourceType == type } == true
     }
 
-    /** Check if a course has any resources at all. */
+    /** Check if a course has any resources at all (canonical, space-insensitive). */
     fun hasAny(courseCode: String): Boolean {
-        return _resources.value.containsKey(courseCode) &&
-               _resources.value[courseCode]?.isNotEmpty() == true
+        val key = CourseRepository.normalizeCode(courseCode)
+        return _resources.value.containsKey(key) &&
+               _resources.value[key]?.isNotEmpty() == true
     }
 
     /** Find existing resource(s) for a course that match the given MD5 checksum. */
     fun findByMd5(courseCode: String, md5: String): List<Resource> {
         if (md5.isBlank()) return emptyList()
-        return (_resources.value[courseCode] ?: emptyList())
+        return (_resources.value[CourseRepository.normalizeCode(courseCode)] ?: emptyList())
             .filter { it.md5Checksum == md5 && it.md5Checksum.isNotBlank() }
     }
 
@@ -199,8 +202,8 @@ object ResourceRepository {
         try {
             val docRef = firestore.collection(RESOURCES_COL).add(data).await()
             val saved = toSave.copy(id = docRef.id)
-            // Update in-memory
-            val key = if (saved.courseCode.isNotBlank()) saved.courseCode else "__LEVEL__"
+            // Update in-memory (canonical key)
+            val key = if (saved.courseCode.isNotBlank()) CourseRepository.normalizeCode(saved.courseCode) else "__LEVEL__"
             val current = _resources.value.toMutableMap()
             val list = (current[key] ?: emptyList()).toMutableList()
             list.add(saved)
@@ -210,7 +213,7 @@ object ResourceRepository {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to add resource", e)
             // Fallback: in-memory only
-            val key = if (toSave.courseCode.isNotBlank()) toSave.courseCode else "__LEVEL__"
+            val key = if (toSave.courseCode.isNotBlank()) CourseRepository.normalizeCode(toSave.courseCode) else "__LEVEL__"
             val current = _resources.value.toMutableMap()
             val list = (current[key] ?: emptyList()).toMutableList()
             list.add(toSave)
@@ -256,7 +259,7 @@ object ResourceRepository {
         }
 
         val current = _resources.value.toMutableMap()
-        current.remove(courseCode)
+        current.remove(CourseRepository.normalizeCode(courseCode))
         _resources.value = current
     }
 }
