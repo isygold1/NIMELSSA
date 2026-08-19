@@ -207,17 +207,44 @@ object OfflineManager {
 
     /** Downloads one resource into [dir] if not already present, then mirrors to the user folder. */
     private fun saveOneInto(dir: File, resource: Resource) {
-        if (resource.masterUrl.isBlank()) return
+        // Prefer masterUrl; fall back to a direct Drive download link built
+        // from fileId (scanner-approved/legacy resources often lack masterUrl).
+        // Note: very large Drive files may answer the /uc link with an HTML
+        // confirmation page instead of bytes — worth a device check.
+        val url = resource.masterUrl
+            .ifBlank {
+                if (resource.fileId.isNotBlank()) {
+                    "https://drive.google.com/uc?export=download&id=${resource.fileId}"
+                } else {
+                    return
+                }
+            }
         val prefix = when (resource.resourceType) {
             "LN" -> "lecture_notes"
             "PQ" -> "past_questions"
             "TB" -> "textbook"
             else -> "resource"
         }
-        val file = File(dir, "$prefix${getExtension(resource.masterUrl)}")
+        val file = File(dir, "$prefix${extensionFor(resource, url)}")
         if (!file.exists()) {
-            downloadFile(resource.masterUrl, file)
+            downloadFile(url, file)
         }
+    }
+
+    /**
+     * Extension for a saved file: prefer the real Drive file name (accurate
+     * for scanner-approved files), fall back to URL sniffing. URL sniffing
+     * alone on a /uc link yields ".html", which is wrong for PDFs.
+     */
+    private fun extensionFor(resource: Resource, url: String): String {
+        val name = resource.fileName.trim()
+        if (name.isNotBlank()) {
+            val dot = name.lastIndexOf('.')
+            if (dot > 0 && name.length - dot in 3..7) {
+                return name.substring(dot)
+            }
+        }
+        return getExtension(url)
     }
 
     private fun downloadFile(urlStr: String, dest: File) {
