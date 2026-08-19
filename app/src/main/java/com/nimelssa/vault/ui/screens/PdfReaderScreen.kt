@@ -5,8 +5,9 @@ import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.calculatePan
+import androidx.compose.ui.input.pointer.calculateZoom
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -202,16 +205,31 @@ private fun ZoomablePageImage(
                 translationY = offset.y
             )
             .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    scale = (scale * zoom).coerceIn(1f, 5f)
-                    if (scale > 1f) {
-                        offset = Offset(
-                            (offset.x + pan.x).coerceIn(-3000f, 3000f),
-                            (offset.y + pan.y).coerceIn(-3000f, 3000f)
-                        )
-                    } else {
-                        offset = Offset.Zero
-                    }
+                awaitEachGesture {
+                    awaitFirstDown()
+                    var handled = false
+                    do {
+                        val event = awaitPointerEvent()
+                        val pointerCount = event.changes.count { it.pressed }
+                        val zoomChange = event.calculateZoom()
+                        val panChange = event.calculatePan()
+                        // Single finger at 1× must NOT consume: the parent
+                        // LazyColumn uses the drag to scroll through pages.
+                        if (!handled && pointerCount < 2 && scale <= 1f) {
+                            break
+                        }
+                        handled = true
+                        event.changes.forEach { it.consume() }
+                        scale = (scale * zoomChange).coerceIn(1f, 5f)
+                        if (scale > 1f) {
+                            offset = Offset(
+                                (offset.x + panChange.x).coerceIn(-3000f, 3000f),
+                                (offset.y + panChange.y).coerceIn(-3000f, 3000f)
+                            )
+                        } else {
+                            offset = Offset.Zero
+                        }
+                    } while (event.changes.any { it.pressed })
                 }
             }
             .pointerInput(Unit) {

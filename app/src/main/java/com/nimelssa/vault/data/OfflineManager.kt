@@ -88,7 +88,7 @@ object OfflineManager {
         withContext(Dispatchers.IO) {
             val dir = File(cacheBase, courseCode).also { it.mkdirs() }
             try {
-                saveOneInto(dir, resource)
+                saveOneInto(dir, resource, courseCode)
                 Log.d(TAG, "Saved single resource for $courseCode")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to save single resource for $courseCode", e)
@@ -125,6 +125,18 @@ object OfflineManager {
     suspend fun removeOffline(courseCode: String) {
         val dir = File(cacheBase, courseCode)
         if (dir.exists()) dir.deleteRecursively()
+
+        // Also delete the mirrored per-course folder from the SAF download
+        // location the user picked in Settings (if any).
+        val context = appContext
+        val uriStr = getUserFolderUri()
+        if (context != null && !uriStr.isNullOrBlank()) {
+            runCatching {
+                val treeUri = Uri.parse(uriStr)
+                val docs = DocumentFile.fromTreeUri(context, treeUri)
+                docs?.findFile(courseCode)?.delete()
+            }.onFailure { Log.e(TAG, "Failed to remove mirror folder for $courseCode", it) }
+        }
 
         val codes = getSavedCodes().toMutableSet()
         codes.remove(courseCode)
@@ -198,7 +210,7 @@ object OfflineManager {
             val dir = File(cacheBase, courseCode).also { it.mkdirs() }
             for (resource in resources) {
                 try {
-                    saveOneInto(dir, resource)
+                    saveOneInto(dir, resource, courseCode)
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to download ${resource.resourceType} for $courseCode", e)
                 }
@@ -206,7 +218,7 @@ object OfflineManager {
         }
 
     /** Downloads one resource into [dir] if not already present, then mirrors to the user folder. */
-    private fun saveOneInto(dir: File, resource: Resource) {
+    private fun saveOneInto(dir: File, resource: Resource, courseCode: String) {
         // Always prefer a REAL export link: drive.google.com .../view|open links
         // return the Drive HTML viewer page, not the file bytes — saving that
         // as ".pdf" produced the "broken file" reports in the SAF folder.
@@ -226,7 +238,7 @@ object OfflineManager {
             file.delete()
         }
         if (!file.exists()) {
-            downloadFile(url, file)
+            downloadFile(url, file, courseCode)
         }
     }
 
@@ -276,7 +288,7 @@ object OfflineManager {
         return getExtension(url)
     }
 
-    private fun downloadFile(urlStr: String, dest: File) {
+    private fun downloadFile(urlStr: String, dest: File, courseCode: String) {
         val url = URL(urlStr)
         val conn = url.openConnection() as HttpURLConnection
         conn.connectTimeout = 15_000
@@ -309,7 +321,7 @@ object OfflineManager {
                 return
             }
             Log.d(TAG, "Downloaded: ${dest.name} (${dest.length()} bytes)")
-            mirrorToUserFolder(dest)
+            mirrorToUserFolder(dest, courseCode)
         } finally {
             conn.disconnect()
         }
@@ -333,16 +345,19 @@ object OfflineManager {
 
     /**
      * Copies a freshly downloaded file into the folder the user chose in
-     * Settings (SAF tree Uri). Purely a user-visible mirror — the app still
-     * reads from its internal store, so no permission prompts are needed.
+     * Settings (SAF tree Uri), under a per-course subfolder so courses never
+     * overwrite each other's mirrors and removal can delete the right files.
+     * Purely a user-visible mirror — the app still reads from its internal
+     * store, so no permission prompts are needed.
      */
-    private fun mirrorToUserFolder(src: File) {
+    private fun mirrorToUserFolder(src: File, courseCode: String) {
         val context = appContext ?: return
         val uriStr = getUserFolderUri() ?: return
         if (uriStr.isBlank()) return
         runCatching {
             val treeUri = Uri.parse(uriStr)
             val docs = DocumentFile.fromTreeUri(context, treeUri) ?: return
+            val courseDir = docs.findFile(courseCode) ?: docs.createDirectory(courseCode) ?: return
             val mime = when (src.extension.lowercase()) {
                 "pdf" -> "application/pdf"
                 "html", "htm" -> "text/html"
@@ -350,7 +365,7 @@ object OfflineManager {
                 "png" -> "image/png"
                 else -> "application/octet-stream"
             }
-            val target = docs.findFile(src.name) ?: docs.createFile(mime, src.name) ?: return
+            val target = courseDir.findFile(src.name) ?: courseDir.createFile(mime, src.name) ?: return
             context.contentResolver.openOutputStream(target.uri)?.use { out ->
                 src.inputStream().use { it.copyTo(out) }
             }
