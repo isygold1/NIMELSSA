@@ -43,6 +43,7 @@ import com.nimelssa.vault.data.ProposalRepository
 import com.nimelssa.vault.data.ResourceRepository
 import com.nimelssa.vault.data.UserSession
 import com.nimelssa.vault.ui.components.AppScreenHeader
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -95,6 +96,11 @@ fun ProposeScreen(
             notes = ""
             targetLevel = ""
             selectedSemester = 1
+            // Let the user actually read the green success card before
+            // bouncing back to the workspace. isSubmitting stays true during
+            // this window (finally runs after), so no double-submit is
+            // possible while the card is on screen.
+            delay(2500)
             onProposed()
         } catch (e: Exception) {
             message = "❌ Failed to submit: ${e.localizedMessage}"
