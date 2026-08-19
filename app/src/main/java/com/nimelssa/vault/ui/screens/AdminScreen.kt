@@ -24,6 +24,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -1413,6 +1414,9 @@ private fun EditCourseDialog(
     var levelExpanded by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Mistake-proofing (option B): unchecked = the old code is NOT auto-linked
+    // as a variant, so a wrong rename doesn't pollute the alias table.
+    var autoLink by remember { mutableStateOf(true) }
 
     val codeChanged = CourseRepository.normalizeCode(code) != CourseRepository.normalizeCode(course.code)
 
@@ -1501,12 +1505,27 @@ private fun EditCourseDialog(
                 if (codeChanged) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "↔ Changes keep all existing files: the old code " +
-                               "'${course.code}' is linked automatically, so resources " +
-                               "filed under it still show on the new shelf.",
+                        text = "↔ Files stay put: nothing is deleted or re-filed.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable {
+                            autoLink = !autoLink
+                        }
+                    ) {
+                        Checkbox(
+                            checked = autoLink,
+                            onCheckedChange = { autoLink = it }
+                        )
+                        Text(
+                            text = "Remember '${course.code}' as a variant of '${code.trim().uppercase()}' " +
+                                   "so its files still show on this shelf",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
                 error?.let {
                     Spacer(modifier = Modifier.height(10.dp))
@@ -1536,7 +1555,7 @@ private fun EditCourseDialog(
                     }
                     if (linkedCanonical != null && linkedCanonical != oldNorm) {
                         error = "'$code' is already linked to another course. " +
-                                "Remove that link before using it here."
+                                "Unlink it in the Link Code dialog first."
                         return@TextButton
                     }
                     scope.launch {
@@ -1549,7 +1568,8 @@ private fun EditCourseDialog(
                                 category = category.trim().ifBlank { "GENERAL" },
                                 level = level,
                                 semester = semester
-                            )
+                            ),
+                            autoLink = autoLink
                         )
                         saving = false
                         onSaved()
@@ -1581,6 +1601,7 @@ private fun LinkCodeDialog(
 ) {
     val scope = rememberCoroutineScope()
     val allCourses by CourseRepository.courses.collectAsState()
+    val aliases by CourseRepository.aliases.collectAsState()
     var variant by remember { mutableStateOf("") }
     var targetCode by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
@@ -1642,6 +1663,41 @@ private fun LinkCodeDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Existing links",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                if (aliases.isEmpty()) {
+                    Text(
+                        text = "No links yet. Add one above to map an old CCMAS code to its current course.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    aliases.forEach { (variant, canonical) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "$variant → $canonical",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = {
+                                    scope.launch { CourseRepository.removeAlias(variant) }
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) { Text("✖", fontSize = 12.sp) }
+                        }
+                    }
                 }
             }
         },

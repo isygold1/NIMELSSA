@@ -111,12 +111,14 @@ object CourseRepository {
     /**
      * Update a course in place (code/name/category/level/semester).
      * When the code changes: writes the course under the new code, deletes the
-     * old doc, and records oldCode → newCode as an alias so existing resources
-     * filed under the old code keep appearing on the new shelf (no data loss,
-     * no re-linking). The level/semester move with the record, so the
-     * workspace level dropdown is unaffected.
+     * old doc, and (unless [autoLink] is false) records oldCode → newCode as an
+     * alias so existing resources filed under the old code keep appearing on
+     * the new shelf (no data loss, no re-linking). The level/semester move
+     * with the record, so the workspace level dropdown is unaffected.
+     * autoLink=false is for mistake-proofing: a rep who typed the wrong code
+     * can rename again without polluting the alias table with a wrong mapping.
      */
-    suspend fun updateCourseCode(oldCode: String, updated: Course) {
+    suspend fun updateCourseCode(oldCode: String, updated: Course, autoLink: Boolean = true) {
         val old = normalizeCode(oldCode)
         val new = normalizeCode(updated.code)
         if (new.isBlank()) return
@@ -133,7 +135,11 @@ object CourseRepository {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to update course $oldCode -> ${updated.code}", e)
         }
-        addAlias(oldCode, updated.code)
+        if (autoLink) {
+            addAlias(oldCode, updated.code)
+        } else {
+            Log.d(TAG, "Skipped auto-alias $oldCode -> ${updated.code} (autoLink off)")
+        }
         _courses.value = _courses.value.filter { normalizeCode(it.code) != old } + updated
     }
 

@@ -482,7 +482,9 @@ fun DocumentViewerScreen(
                         fontWeight = FontWeight.Bold
                     )
                 }
-                val usedMb = OfflineManager.getUsedBytes() / (1024 * 1024)
+                val usedMb = remember(offlineTick, isSaving) {
+                    OfflineManager.getUsedBytes() / (1024 * 1024)
+                }
                 val maxMb = OfflineManager.getMaxBytes() / (1024 * 1024)
                 Text(
                     text = "$usedMb / $maxMb MB",
@@ -693,7 +695,7 @@ private fun ResourceListSection(
         // docs may only have fileId — build a viewable URL either way
         // so no approved resource ever opens dead.
         val url = resourceUrl(resource)
-        val saved = localFile != null
+        val saved = localFile != null && !OfflineManager.isBrokenFile(File(localFile))
         ResourceCard(
             icon = resource.icon,
             title = resource.fileName.ifBlank { resource.label.ifBlank { resource.resourceLabel } },

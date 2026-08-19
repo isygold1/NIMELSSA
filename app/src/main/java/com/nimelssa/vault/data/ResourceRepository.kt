@@ -37,6 +37,12 @@ object ResourceRepository {
         // resolve to their canonical course so merged shelves form correctly.
         CourseRepository.loadAliases()
 
+        // Last-known shelves: if the primary fetch fails (offline, rules, etc.)
+        // we must NOT clobber what the UI is already showing — that produced
+        // "materials vanish a split second after opening" when offline.
+        val previous = _resources.value
+        var resourcesFetchOk = false
+
         val map = mutableMapOf<String, MutableList<Resource>>()
 
         // 1. Load new-format resources/{autoId}
@@ -49,6 +55,7 @@ object ResourceRepository {
                 val key = if (r.courseCode.isNotBlank()) CourseRepository.resolveCode(r.courseCode) else "__LEVEL__"
                 map.getOrPut(key) { mutableListOf() }.add(r)
             }
+            resourcesFetchOk = true
             Log.d(TAG, "Loaded ${snap.size()} resources from $RESOURCES_COL")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load resources", e)
@@ -113,6 +120,16 @@ object ResourceRepository {
             Log.d(TAG, "Loaded ${tbSnap.size()} level textbook docs")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load level_textbooks", e)
+        }
+
+        if (!resourcesFetchOk && previous.isNotEmpty()) {
+            // Offline or transient fetch failure with stale data available —
+            // keep the last-known shelves instead of showing empty lists.
+            // Assumption: legacy/level fetch results are secondary to the main
+            // catalog, so they're dropped in this rare path rather than merged.
+            Log.w(TAG, "Primary resource fetch failed — keeping ${previous.size} cached shelf bucket(s)")
+            _resources.value = previous
+            return
         }
 
         _resources.value = map

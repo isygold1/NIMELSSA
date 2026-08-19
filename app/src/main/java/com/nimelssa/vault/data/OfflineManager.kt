@@ -207,18 +207,11 @@ object OfflineManager {
 
     /** Downloads one resource into [dir] if not already present, then mirrors to the user folder. */
     private fun saveOneInto(dir: File, resource: Resource) {
-        // Prefer masterUrl; fall back to a direct Drive download link built
-        // from fileId (scanner-approved/legacy resources often lack masterUrl).
-        // Note: very large Drive files may answer the /uc link with an HTML
-        // confirmation page instead of bytes — worth a device check.
-        val url = resource.masterUrl
-            .ifBlank {
-                if (resource.fileId.isNotBlank()) {
-                    "https://drive.google.com/uc?export=download&id=${resource.fileId}"
-                } else {
-                    return
-                }
-            }
+        // Always prefer a REAL export link: drive.google.com .../view|open links
+        // return the Drive HTML viewer page, not the file bytes — saving that
+        // as ".pdf" produced the "broken file" reports in the SAF folder.
+        // Priority: stored fileId → fileId extracted from masterUrl → raw masterUrl.
+        val url = downloadUrlFor(resource) ?: return
         val prefix = when (resource.resourceType) {
             "LN" -> "lecture_notes"
             "PQ" -> "past_questions"
@@ -226,9 +219,46 @@ object OfflineManager {
             else -> "resource"
         }
         val file = File(dir, "$prefix${extensionFor(resource, url)}")
+        // Heal leftovers from the old downloader: a cached copy that is an
+        // HTML page (or near-empty) is deleted so it downloads fresh below.
+        if (file.exists() && isBrokenFile(file)) {
+            Log.w(TAG, "Deleting broken cached copy ${file.name} (HTML/empty)")
+            file.delete()
+        }
         if (!file.exists()) {
             downloadFile(url, file)
         }
+    }
+
+    /**
+     * Best download URL for a resource: direct Drive export when a fileId is
+     * known (stored or extracted from the masterUrl), raw masterUrl otherwise.
+     * Returns null when there is nothing downloadable.
+     */
+    private fun downloadUrlFor(resource: Resource): String? {
+        val fileId = resource.fileId
+            .ifBlank { driveFileIdFromUrl(resource.masterUrl) }
+            .trim()
+        if (fileId.isNotBlank()) {
+            // confirm=t skips Drive's "large file" HTML confirmation page for
+            // publicly shared files (harmless when not needed).
+            return "https://drive.google.com/uc?export=download&id=$fileId&confirm=t"
+        }
+        return resource.masterUrl.ifBlank { null }
+    }
+
+    /** Pulls a Drive file id out of /file/d/..., open?id=..., or export=download&id= links. */
+    private fun driveFileIdFromUrl(url: String): String? {
+        if (url.isBlank()) return null
+        val patterns = listOf(
+            Regex("[/=]file/d/([^/?#]+)"),
+            Regex("[?&]id=([^&?#]+)"),
+            Regex("drive\\.google\\.com/uc\\?export=download&id=([^&?#]+)")
+        )
+        for (pattern in patterns) {
+            pattern.find(url)?.groupValues?.get(1)?.let { return it }
+        }
+        return null
     }
 
     /**
@@ -256,13 +286,50 @@ object OfflineManager {
         try {
             conn.connect()
             conn.inputStream.use { input ->
-                FileOutputStream(dest).use { output -> input.copyTo(output) }
+                // Peek the first bytes: Drive pages (viewer/confirmation) are
+                // HTML. Saving those as ".pdf" produced broken files — refuse
+                // and leave nothing behind.
+                val head = ByteArray(512)
+                val n = input.read(head)
+                if (n > 0) {
+                    val sample = String(head, 0, n, Charsets.ISO_8859_1)
+                        .trimStart().lowercase()
+                    if (sample.startsWith("<!doctype html") || sample.startsWith("<html")) {
+                        Log.e(TAG, "Blocked HTML response for $urlStr — not writing ${dest.name}")
+                        return
+                    }
+                }
+                FileOutputStream(dest).use { output ->
+                    if (n > 0) output.write(head, 0, n)
+                    input.copyTo(output)
+                }
+            }
+            if (dest.length() == 0L) {
+                dest.delete()
+                Log.e(TAG, "Downloaded empty file for $urlStr — removed")
+                return
             }
             Log.d(TAG, "Downloaded: ${dest.name} (${dest.length()} bytes)")
             mirrorToUserFolder(dest)
         } finally {
             conn.disconnect()
         }
+    }
+
+    /**
+     * True when an existing cached file looks broken (HTML page or near-empty)
+     * — e.g. leftovers from the old downloader that saved Drive pages as PDFs.
+     * Such files are deleted so the next save retries with the real export URL.
+     */
+    fun isBrokenFile(file: File): Boolean {
+        if (!file.exists() || file.length() < 512L) return true
+        val sample = file.inputStream().use { input ->
+            val head = ByteArray(512)
+            val n = input.read(head)
+            if (n <= 0) return@use ""
+            String(head, 0, n, Charsets.ISO_8859_1).trimStart().lowercase()
+        }
+        return sample.startsWith("<!doctype html") || sample.startsWith("<html")
     }
 
     /**
