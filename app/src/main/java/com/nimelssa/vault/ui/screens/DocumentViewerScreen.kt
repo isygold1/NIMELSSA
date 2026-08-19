@@ -407,7 +407,7 @@ fun DocumentViewerScreen(
                                 pdfTitle = resource.fileName.ifBlank { resource.label }
                                 pdfError = null
                                 pdfSourceUrl = url
-                                pdfFile = File(localFile)
+                                pdfFile = localFile
                             }
                             // Online → view only: Custom Tab (Chrome handles PDFs
                             // and Drive previews; no bytes written to the app).
