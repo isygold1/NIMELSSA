@@ -21,7 +21,7 @@ import java.net.URL
  * under [MAX_CACHE_BYTES] so you can save hundreds of courses without
  * filling up the device.
  *
- * Files stored in: `{cacheDir}/offline/{courseCode}/`
+ * Files stored in: `{filesDir}/offline/{courseCode}/`
  *
  * Eviction: when a new save would exceed the limit, the least recently
  * accessed course(s) are automatically removed until space is freed.
