@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,6 +29,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -51,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nimelssa.vault.data.AiMatchedItem
 import com.nimelssa.vault.data.AiPreview
 import com.nimelssa.vault.data.AiUnmatchedFile
@@ -1199,36 +1203,36 @@ private fun CourseManageRow(
                     )
                 }
             }
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 if (hasAny) {
-                    Button(
+                    IconButton(
                         onClick = onPreview,
-                        modifier = Modifier.padding(end = 4.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
+                        modifier = Modifier.size(36.dp),
+                        colors = IconButtonDefaults.iconButtonColors(
                             containerColor = Color(0xFF6366F1)
-                        ),
-                        contentPadding = ButtonDefaults.ButtonWithIconContentPadding
-                    ) { Text("👁️", style = MaterialTheme.typography.labelSmall) }
+                        )
+                    ) {
+                        Text("👁️", fontSize = 14.sp)
+                    }
                 }
-                Text(
-                    text = "✏️",
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .clickable(onClick = onEdit),
-                    style = MaterialTheme.typography.titleMedium
-                )
+                IconButton(
+                    onClick = onEdit,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Text("✏️", fontSize = 14.sp)
+                }
                 if (canDelete) {
-                    Text(
-                        text = "🗑️",
-                        modifier = Modifier.clickable {
+                    IconButton(
+                        onClick = {
                             scope.launch {
                                 ResourceRepository.removeAllForCourse(course.code)
                                 CourseRepository.removeCourse(course.code)
                             }
                         },
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text("🗑️", fontSize = 14.sp)
+                    }
                 }
             }
         }

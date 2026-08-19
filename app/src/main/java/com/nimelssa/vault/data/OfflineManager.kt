@@ -3,7 +3,9 @@ package com.nimelssa.vault.data
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
 import com.nimelssa.vault.data.Resource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,17 +31,21 @@ object OfflineManager {
     private const val PREFS_NAME = "offline_courses"
     private const val KEY_OFFLINE_CODES = "saved_codes"
     private const val KEY_ACCESS_TIMES = "access_times_json"
+    private const val KEY_USER_FOLDER_URI = "user_folder_uri"
+    private const val KEY_USER_FOLDER_NAME = "user_folder_name"
 
     /** Maximum disk space for offline course files (300 MB). */
     private const val MAX_CACHE_BYTES = 300L * 1024 * 1024
 
     private var prefs: android.content.SharedPreferences? = null
     private var cacheBase: File? = null
+    private var appContext: Context? = null
 
     /** Initialise with a Context (call from Application.onCreate()) */
     fun init(context: Context) {
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         cacheBase = File(context.cacheDir, "offline").also { it.mkdirs() }
+        appContext = context.applicationContext
         Log.d(TAG, "Initialised. ${getSavedCodes().size} courses saved.")
     }
 
@@ -48,6 +54,51 @@ object OfflineManager {
     /** Returns the set of course codes the user has saved for offline. */
     fun getSavedCodes(): Set<String> =
         prefs?.getStringSet(KEY_OFFLINE_CODES, emptySet()) ?: emptySet()
+
+    // ── User-chosen download folder (SAF) ─────────────────────────────
+
+    /** Uri string of the folder the user picked in Settings, or null (default = app cache). */
+    fun getUserFolderUri(): String? = prefs?.getString(KEY_USER_FOLDER_URI, null)
+
+    /** Display name of the user-picked folder, or null when using the default. */
+    fun getUserFolderName(): String? = prefs?.getString(KEY_USER_FOLDER_NAME, null)
+
+    /** Persist the folder picked via ACTION_OPEN_DOCUMENT_TREE. */
+    fun setUserFolder(uri: String, displayName: String) {
+        prefs?.edit()
+            ?.putString(KEY_USER_FOLDER_URI, uri)
+            ?.putString(KEY_USER_FOLDER_NAME, displayName)
+            ?.apply()
+    }
+
+    /** Revert to the default internal storage location. */
+    fun clearUserFolder() {
+        prefs?.edit()
+            ?.remove(KEY_USER_FOLDER_URI)
+            ?.remove(KEY_USER_FOLDER_NAME)
+            ?.apply()
+    }
+
+    /**
+     * Saves a single resource for a course (per-file download button).
+     * The internal copy lands in the offline store; if the user picked a
+     * download folder in Settings, a mirror copy is written there too.
+     */
+    suspend fun saveSingleResource(courseCode: String, resource: Resource) =
+        withContext(Dispatchers.IO) {
+            val dir = File(cacheBase, courseCode).also { it.mkdirs() }
+            try {
+                saveOneInto(dir, resource)
+                Log.d(TAG, "Saved single resource for $courseCode")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save single resource for $courseCode", e)
+            }
+            touchAccessTime(courseCode)
+            val codes = getSavedCodes().toMutableSet()
+            codes.add(courseCode)
+            prefs?.edit()?.putStringSet(KEY_OFFLINE_CODES, codes)?.apply()
+            enforceCacheLimit()
+        }
 
     /**
      * Downloads all resources for a course, then enforces the cache limit
@@ -146,23 +197,28 @@ object OfflineManager {
         withContext(Dispatchers.IO) {
             val dir = File(cacheBase, courseCode).also { it.mkdirs() }
             for (resource in resources) {
-                if (resource.masterUrl.isBlank()) continue
-                val prefix = when (resource.resourceType) {
-                    "LN" -> "lecture_notes"
-                    "PQ" -> "past_questions"
-                    "TB" -> "textbook"
-                    else -> "resource"
-                }
                 try {
-                    val file = File(dir, "$prefix${getExtension(resource.masterUrl)}")
-                    if (!file.exists()) {
-                        downloadFile(resource.masterUrl, file)
-                    }
+                    saveOneInto(dir, resource)
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to download ${resource.resourceType} for $courseCode", e)
                 }
             }
         }
+
+    /** Downloads one resource into [dir] if not already present, then mirrors to the user folder. */
+    private fun saveOneInto(dir: File, resource: Resource) {
+        if (resource.masterUrl.isBlank()) return
+        val prefix = when (resource.resourceType) {
+            "LN" -> "lecture_notes"
+            "PQ" -> "past_questions"
+            "TB" -> "textbook"
+            else -> "resource"
+        }
+        val file = File(dir, "$prefix${getExtension(resource.masterUrl)}")
+        if (!file.exists()) {
+            downloadFile(resource.masterUrl, file)
+        }
+    }
 
     private fun downloadFile(urlStr: String, dest: File) {
         val url = URL(urlStr)
@@ -176,9 +232,36 @@ object OfflineManager {
                 FileOutputStream(dest).use { output -> input.copyTo(output) }
             }
             Log.d(TAG, "Downloaded: ${dest.name} (${dest.length()} bytes)")
+            mirrorToUserFolder(dest)
         } finally {
             conn.disconnect()
         }
+    }
+
+    /**
+     * Copies a freshly downloaded file into the folder the user chose in
+     * Settings (SAF tree Uri). Purely a user-visible mirror — the app still
+     * reads from its internal store, so no permission prompts are needed.
+     */
+    private fun mirrorToUserFolder(src: File) {
+        val context = appContext ?: return
+        val uriStr = getUserFolderUri() ?: return
+        if (uriStr.isBlank()) return
+        runCatching {
+            val treeUri = Uri.parse(uriStr)
+            val docs = DocumentFile.fromTreeUri(context, treeUri) ?: return
+            val mime = when (src.extension.lowercase()) {
+                "pdf" -> "application/pdf"
+                "html", "htm" -> "text/html"
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                else -> "application/octet-stream"
+            }
+            val target = docs.findFile(src.name) ?: docs.createFile(mime, src.name) ?: return
+            context.contentResolver.openOutputStream(target.uri)?.use { out ->
+                src.inputStream().use { it.copyTo(out) }
+            }
+        }.onFailure { Log.e(TAG, "Failed to mirror ${src.name} to user folder", it) }
     }
 
     private fun getExtension(url: String): String {

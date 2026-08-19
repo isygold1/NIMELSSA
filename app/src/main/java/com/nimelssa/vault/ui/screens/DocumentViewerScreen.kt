@@ -4,6 +4,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
@@ -46,6 +49,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -63,19 +67,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.nimelssa.vault.data.Course
 import com.nimelssa.vault.data.CourseRepository
 import com.nimelssa.vault.data.OfflineManager
 import com.nimelssa.vault.data.Resource
 import com.nimelssa.vault.data.ResourceRepository
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -129,18 +129,35 @@ fun DocumentViewerScreen(
     var webViewError by remember { mutableStateOf<String?>(null) }
     var retryTick by remember { mutableIntStateOf(0) }   // bumped to re-attempt WebView load
 
-    // Native PDF preview (PdfRenderer): file + title once downloaded/opened
+    // Native PDF preview (PdfRenderer): file + title once opened from a saved copy
     var pdfFile by remember { mutableStateOf<File?>(null) }
     var pdfTitle by remember { mutableStateOf("") }
     var pdfError by remember { mutableStateOf<String?>(null) }
-    var isDownloadingPdf by remember { mutableStateOf(false) }
-    var downloadProgress by remember { mutableIntStateOf(0) }
+    var pdfSourceUrl by remember { mutableStateOf<String?>(null) }  // for the reader's ↗ Browser escape
     var isOnline by remember { mutableStateOf(OfflineManager.isOnline(context)) }
     var isSaving by remember { mutableStateOf(false) }
 
-    // Refresh online status
-    LaunchedEffect(Unit) {
-        isOnline = OfflineManager.isOnline(context)
+    // Per-file offline saves: ids currently downloading + a tick bumped after
+    // any save so cards/sticky bar recompose with fresh offline availability.
+    var savingIds by remember { mutableStateOf(setOf<String>()) }
+    var offlineTick by remember { mutableIntStateOf(0) }
+
+    // Live connectivity: reacts to Wi-Fi/data toggles instead of a one-shot check.
+    DisposableEffect(context) {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                isOnline = true
+            }
+            override fun onLost(network: Network) {
+                isOnline = OfflineManager.isOnline(context)
+            }
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                isOnline = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            }
+        }
+        cm.registerDefaultNetworkCallback(callback)
+        onDispose { runCatching { cm.unregisterNetworkCallback(callback) } }
     }
 
     val previewTitle = when {
@@ -305,30 +322,6 @@ fun DocumentViewerScreen(
                     Text("← Back to resources")
                 }
             }
-        } else if (isDownloadingPdf) {
-            // ── PDF download in progress ──
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                CircularProgressIndicator()
-                Spacer(modifier = Modifier.height(16.dp))
-                LinearProgressIndicator(
-                    progress = { downloadProgress / 100f },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Downloading PDF… $downloadProgress%",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         } else if (pdfError != null) {
             // ── PDF load failed (download or render) ──
             val failedUrl = activeUrl ?: ""
@@ -368,9 +361,12 @@ fun DocumentViewerScreen(
                 PdfReaderScreen(
                     file = file,
                     title = pdfTitle,
-                    onClose = { pdfFile = null },
+                    onClose = {
+                        pdfFile = null
+                        pdfSourceUrl = null
+                    },
                     onOpenBrowser = {
-                        val currentUrl = activeUrl
+                        val currentUrl = pdfSourceUrl
                         if (currentUrl != null && currentUrl.isNotBlank()) {
                             openCustomTab(context, currentUrl)
                         }
@@ -405,38 +401,43 @@ fun DocumentViewerScreen(
                 onOpenResource = { resource, url, localFile ->
                     scope.launch {
                         when {
-                            // PDFs render natively in-app (offline copy first,
-                            // otherwise download once to cache).
-                            isPdfResource(resource) -> {
-                                val file = localFile
-                                if (file != null) {
-                                    pdfTitle = resource.fileName.ifBlank { resource.label }
-                                    pdfError = null
-                                    pdfFile = file
-                                } else {
-                                    isDownloadingPdf = true
-                                    downloadProgress = 0
-                                    pdfError = null
-                                    val downloaded = downloadPdf(context, resource, url) { p ->
-                                        downloadProgress = p
-                                    }
-                                    isDownloadingPdf = false
-                                    if (downloaded != null) {
-                                        pdfTitle = resource.fileName.ifBlank { resource.label }
-                                        pdfFile = downloaded
-                                    } else {
-                                        pdfError = "Could not download this PDF.\nIt may need a different share permission."
-                                    }
-                                }
+                            // Saved copy exists → native in-app reader (works offline,
+                            // no download — the ⬇️ button is the only save path).
+                            localFile != null -> {
+                                pdfTitle = resource.fileName.ifBlank { resource.label }
+                                pdfError = null
+                                pdfSourceUrl = url
+                                pdfFile = File(localFile)
                             }
-                            // Local files (offline non-PDF copies) still use WebView
+                            // Online → view only: Custom Tab (Chrome handles PDFs
+                            // and Drive previews; no bytes written to the app).
+                            // Local file paths (edge cases) still use WebView.
                             url.startsWith("file://") || url.startsWith("/") -> {
                                 activeUrl = url
                                 activeTitle = "${course.code} — ${resource.resourceLabel}"
                             }
-                            // Everything online and non-PDF opens in a Custom Tab
-                            else -> openCustomTab(context, url)
+                            isOnline -> {
+                                openCustomTab(context, url)
+                            }
+                            // Offline with no saved copy — prompt to download first.
+                            else -> {
+                                pdfFile = null
+                                pdfTitle = ""
+                                activeUrl = null
+                                pdfError = "You're offline and this file has no saved copy.\n" +
+                                    "Tap ⬇️ on the file card while connected to save it."
+                            }
                         }
+                    }
+                },
+                savingIds = savingIds,
+                offlineTick = offlineTick,
+                onSaveResource = { resource ->
+                    scope.launch {
+                        savingIds = savingIds + resource.id
+                        OfflineManager.saveSingleResource(course.code, resource)
+                        savingIds = savingIds - resource.id
+                        offlineTick++
                     }
                 }
             )
@@ -495,14 +496,6 @@ fun DocumentViewerScreen(
 
 // ─────────────── Resource list ───────────────
 
-/** Is this resource a PDF (by filename or direct URL)? */
-private fun isPdfResource(resource: Resource): Boolean {
-    val name = resource.fileName.lowercase()
-    if (name.endsWith(".pdf")) return true
-    val url = resource.masterUrl.lowercase().substringBefore("?")
-    return url.endsWith(".pdf")
-}
-
 /** Opens a URL in a Chrome Custom Tab (falls back to the default browser). */
 private fun openCustomTab(context: Context, url: String) {
     if (url.isBlank()) return
@@ -512,95 +505,6 @@ private fun openCustomTab(context: Context, url: String) {
         .launchUrl(context, Uri.parse(url))
 }
 
-/**
- * Downloads a PDF to the app cache so it can be rendered in-app with
- * PdfRenderer. Drive files download via the `uc?export=download` endpoint
- * (preview URLs serve HTML, not bytes).
- */
-private suspend fun downloadPdf(
-    context: Context,
-    resource: Resource,
-    fallbackUrl: String,
-    onProgress: (Int) -> Unit
-): File? = withContext(Dispatchers.IO) {
-    val downloadUrl = when {
-        resource.fileId.isNotBlank() ->
-            "https://drive.google.com/uc?export=download&id=${resource.fileId}"
-        else -> fallbackUrl
-    }
-    if (downloadUrl.isBlank()) return@withContext null
-    try {
-        val safeName = resource.fileName
-            .ifBlank { "document.pdf" }
-            .replace(Regex("[^A-Za-z0-9._-]"), "_")
-        val target = File(File(context.cacheDir, "pdf_reader"), safeName)
-        target.parentFile?.mkdirs()
-
-        var current = URL(downloadUrl)
-        var redirects = 0
-        var connection: HttpURLConnection? = null
-        var input: java.io.InputStream? = null
-        var ok = false
-        while (true) {
-            connection = current.openConnection() as HttpURLConnection
-            connection.instanceFollowRedirects = false
-            connection.connect()
-            val code = connection.responseCode
-            if (code in 300..399) {
-                val location = connection.getHeaderField("Location")
-                connection.disconnect()
-                if (location == null || redirects++ > 5) break
-                current = URL(current, location)
-                continue
-            }
-            if (code != 200) break
-            input = connection.inputStream
-            ok = true
-            break
-        }
-
-        if (!ok) {
-            connection?.disconnect()
-            return@withContext null
-        }
-
-        val total = connection?.contentLength ?: -1
-        FileOutputStream(target).use { out ->
-            val buffer = ByteArray(8192)
-            var done = 0
-            val stream = input!!
-            while (true) {
-                val n = stream.read(buffer)
-                if (n == -1) break
-                out.write(buffer, 0, n)
-                done += n
-                if (total > 0) onProgress((done * 100) / total)
-            }
-        }
-        input?.close()
-        connection?.disconnect()
-
-        // Sanity check: a real PDF starts with "%PDF". Drive sometimes serves
-        // an HTML page instead (restricted file) — treat that as failure.
-        val magic = ByteArray(4)
-        var magicRead = 0
-        target.inputStream().use { ins ->
-            while (magicRead < 4) {
-                val r = ins.read(magic, magicRead, 4 - magicRead)
-                if (r == -1) break
-                magicRead += r
-            }
-        }
-        if (magicRead < 4 || !magic.contentEquals(byteArrayOf(0x25, 0x50, 0x44, 0x46))) {  // "%PDF"
-            target.delete()
-            return@withContext null
-        }
-        target
-    } catch (e: Exception) {
-        null
-    }
-}
-
 @Composable
 private fun ResourceListView(
     modifier: Modifier = Modifier,
@@ -608,7 +512,10 @@ private fun ResourceListView(
     resources: List<Resource>,
     isOnline: Boolean,
     filterLabel: String? = null,
-    onOpenResource: (Resource, String, File?) -> Unit
+    onOpenResource: (Resource, String, File?) -> Unit,
+    savingIds: Set<String> = emptySet(),
+    offlineTick: Int = 0,
+    onSaveResource: ((Resource) -> Unit)? = null
 ) {
     Column(
         modifier = modifier
@@ -662,7 +569,10 @@ private fun ResourceListView(
                     course = course,
                     resources = currentSection,
                     isOnline = isOnline,
-                    onOpenResource = onOpenResource
+                    onOpenResource = onOpenResource,
+                    savingIds = savingIds,
+                    offlineTick = offlineTick,
+                    onSaveResource = onSaveResource
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
@@ -676,14 +586,20 @@ private fun ResourceListView(
                     course = course,
                     resources = previousSection,
                     isOnline = isOnline,
-                    onOpenResource = onOpenResource
+                    onOpenResource = onOpenResource,
+                    savingIds = savingIds,
+                    offlineTick = offlineTick,
+                    onSaveResource = onSaveResource
                 )
             } else {
                 ResourceListSection(
                     course = course,
                     resources = resources,
                     isOnline = isOnline,
-                    onOpenResource = onOpenResource
+                    onOpenResource = onOpenResource,
+                    savingIds = savingIds,
+                    offlineTick = offlineTick,
+                    onSaveResource = onSaveResource
                 )
             }
         } else {
@@ -764,22 +680,32 @@ private fun ResourceListSection(
     course: com.nimelssa.vault.data.Course,
     resources: List<Resource>,
     isOnline: Boolean,
-    onOpenResource: (Resource, String, File?) -> Unit
+    onOpenResource: (Resource, String, File?) -> Unit,
+    savingIds: Set<String> = emptySet(),
+    offlineTick: Int = 0,
+    onSaveResource: ((Resource) -> Unit)? = null
 ) {
+    // offlineTick is read here so the section recomposes after any save and
+    // freshly queries OfflineManager for each card's saved state.
     resources.forEach { resource ->
         val localFile = OfflineManager.getLocalFile(course.code, resource.resourceType.lowercase())
         // Approved resources carry masterUrl, but legacy or edge-case
         // docs may only have fileId — build a viewable URL either way
         // so no approved resource ever opens dead.
         val url = resourceUrl(resource)
+        val saved = localFile != null
         ResourceCard(
             icon = resource.icon,
             title = resource.fileName.ifBlank { resource.label.ifBlank { resource.resourceLabel } },
             subtitle = "${resource.resourceLabel}" +
                 if (resource.submittedBy.isNotBlank()) " • by ${resource.submittedBy}" else "",
             notes = resource.notes,
-            isAvailableOffline = localFile != null,
+            isAvailableOffline = saved,
             isOnline = isOnline,
+            isSaving = resource.id in savingIds,
+            onSave = if (onSaveResource != null && isOnline && !saved) {
+                { onSaveResource(resource) }
+            } else null,
             onOpen = { onOpenResource(resource, url, localFile?.let { File(it) }) }
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -806,6 +732,8 @@ private fun ResourceCard(
     notes: String,
     isAvailableOffline: Boolean,
     isOnline: Boolean,
+    isSaving: Boolean = false,
+    onSave: (() -> Unit)? = null,
     onOpen: () -> Unit
 ) {
     val canOpen = isOnline || isAvailableOffline
@@ -878,6 +806,23 @@ private fun ResourceCard(
                         color = if (canOpen) Color.White
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+
+            // Per-file save: ⬇️ at the card's top-right, only while online and
+            // not already saved — the single source of downloads now.
+            if (onSave != null) {
+                Column(modifier = Modifier.align(Alignment.Top)) {
+                    IconButton(
+                        onClick = onSave,
+                        enabled = !isSaving,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Text(
+                            text = if (isSaving) "⏳" else "⬇️",
+                            fontSize = 16.sp
+                        )
+                    }
                 }
             }
         }

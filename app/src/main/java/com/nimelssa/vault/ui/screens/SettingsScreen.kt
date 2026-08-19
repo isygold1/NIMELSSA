@@ -1,5 +1,8 @@
 package com.nimelssa.vault.ui.screens
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,10 +26,16 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.documentfile.provider.DocumentFile
+import com.nimelssa.vault.data.OfflineManager
 import com.nimelssa.vault.ui.theme.ThemeManager
 import com.nimelssa.vault.ui.theme.ThemeMode
 
@@ -37,6 +46,33 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val themeMode by ThemeManager.mode.collectAsState()
+    val context = LocalContext.current
+
+    // Current download folder display name; refreshed on pick/clear so the
+    // UI always matches what OfflineManager persists.
+    var folderName by remember { mutableStateOf(OfflineManager.getUserFolderName()) }
+
+    val folderPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            try {
+                // Retain access after the screen/process dies (system grants
+                // persistable permission for tree picks; some providers still
+                // throw, so this must not crash the flow).
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+            }
+            val displayName = DocumentFile.fromTreeUri(context, uri)?.name
+                ?: uri.lastPathSegment
+                ?: "Download folder"
+            OfflineManager.setUserFolder(uri.toString(), displayName)
+            folderName = displayName
+        }
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
@@ -102,6 +138,65 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "STORAGE",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Download location",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (folderName != null)
+                            "Files saved with ⬇️ also go to: $folderName"
+                        else
+                            "Files saved with ⬇️ stay in the app's private storage. " +
+                                "Choose a folder to make them easy to find elsewhere.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row {
+                        TextButton(onClick = { folderPicker.launch(null) }) {
+                            Text(
+                                if (folderName != null) "Change folder" else "Choose folder",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        if (folderName != null) {
+                            TextButton(onClick = {
+                                OfflineManager.clearUserFolder()
+                                folderName = null
+                            }) {
+                                Text(
+                                    "Use default",
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
