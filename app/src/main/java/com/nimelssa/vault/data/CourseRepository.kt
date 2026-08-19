@@ -1,6 +1,7 @@
 package com.nimelssa.vault.data
 
 import android.util.Log
+import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -151,8 +152,27 @@ object CourseRepository {
 
     /** Load all courses from Firestore. Seeds if empty. */
     suspend fun loadAll() {
-        // Alias table must be ready before resources are grouped by code
+        // Alias table must be ready before resources are grouped by code.
+        // Offline this reads the disk-snapshot aliases; online it fetches.
         loadAliases()
+
+        // Offline: NEVER call Firestore — its local persistence is
+        // unpredictable offline (data, throw, or empty snapshot, varying per
+        // run). Keep in-memory, or hydrate from the disk snapshot on a cold
+        // start. One deterministic outcome on every restart.
+        val ctx = FirebaseApp.getInstance().applicationContext
+        if (!OfflineManager.isOnline(ctx)) {
+            if (_courses.value.isEmpty()) {
+                val cached = LocalCache.readCourses()
+                Log.d(TAG, "Offline cold start — using disk snapshot (${cached?.first?.size ?: 0} courses)")
+                _courses.value = cached?.first ?: getDefaultCourses()
+                if (_aliases.value.isEmpty()) _aliases.value = cached?.second ?: emptyMap()
+            } else {
+                Log.d(TAG, "Offline — keeping ${_courses.value.size} in-memory courses")
+            }
+            return
+        }
+
         try {
             val snap = firestore.collection(COLLECTION).get().await()
 

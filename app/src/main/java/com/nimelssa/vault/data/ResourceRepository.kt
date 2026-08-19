@@ -1,6 +1,7 @@
 package com.nimelssa.vault.data
 
 import android.util.Log
+import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.toObject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +37,26 @@ object ResourceRepository {
         // Alias table must be ready before grouping: variant codes (old CCMAS)
         // resolve to their canonical course so merged shelves form correctly.
         CourseRepository.loadAliases()
+
+        // Offline: NEVER call Firestore — its local persistence is
+        // unpredictable offline (data, throw, or empty snapshot, varying per
+        // run). Keep in-memory, or hydrate from the disk snapshot on a cold
+        // start. One deterministic outcome on every restart.
+        val ctx = FirebaseApp.getInstance().applicationContext
+        if (!OfflineManager.isOnline(ctx)) {
+            if (_resources.value.isNotEmpty()) {
+                Log.d(TAG, "Offline — keeping ${_resources.value.size} in-memory shelf bucket(s)")
+            } else {
+                val cached = LocalCache.readResources()
+                if (cached != null) {
+                    Log.d(TAG, "Offline cold start — using ${cached.values.sumOf { it.size }} resources from disk snapshot")
+                    _resources.value = cached
+                } else {
+                    Log.d(TAG, "Offline cold start — no disk snapshot, showing empty shelves")
+                }
+            }
+            return
+        }
 
         // Last-known shelves: if the primary fetch fails (offline, rules, etc.)
         // we must NOT clobber what the UI is already showing — that produced
@@ -140,6 +161,16 @@ object ResourceRepository {
                 Log.d(TAG, "Using ${cached.values.sumOf { it.size }} resources from disk cache")
                 return
             }
+        }
+
+        // Online "success" that produced nothing while we already hold data:
+        // keep the known-good shelves (Firestore can hand back an empty set
+        // after a rules/config hiccup; blanking the screen is worse than
+        // showing slightly stale data).
+        if (map.isEmpty() && previous.isNotEmpty()) {
+            Log.w(TAG, "Resource fetch returned empty — keeping ${previous.size} cached shelf bucket(s)")
+            _resources.value = previous
+            return
         }
 
         _resources.value = map
