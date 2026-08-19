@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -141,6 +142,9 @@ fun DocumentViewerScreen(
     // any save so cards/sticky bar recompose with fresh offline availability.
     var savingIds by remember { mutableStateOf(setOf<String>()) }
     var offlineTick by remember { mutableIntStateOf(0) }
+    // Whole-course removal requires an explicit confirm — the bar must NOT
+    // toggle back to "save" on an accidental second tap.
+    var showRemoveConfirm by remember { mutableStateOf(false) }
 
     // Live connectivity: reacts to Wi-Fi/data toggles instead of a one-shot check.
     DisposableEffect(context) {
@@ -454,33 +458,46 @@ fun DocumentViewerScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = {
-                        isSaving = true
-                        scope.launch {
-                            if (course.code in OfflineManager.getSavedCodes()) {
-                                OfflineManager.removeOffline(course.code)
-                            } else {
-                                OfflineManager.saveOfflineResources(course.code, allResources)
-                            }
-                            isSaving = false
-                        }
-                    },
-                    enabled = !isSaving && allResources.isNotEmpty(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (savedOffline)
-                            MaterialTheme.colorScheme.tertiaryContainer
-                        else MaterialTheme.colorScheme.primary,
-                        contentColor = if (savedOffline)
-                            MaterialTheme.colorScheme.onTertiaryContainer
-                        else MaterialTheme.colorScheme.onPrimary
-                    ),
-                    shape = RoundedCornerShape(10.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = if (savedOffline) "✓ Saved offline" else "💾 Save course offline",
-                        fontWeight = FontWeight.Bold
-                    )
+                    Button(
+                        onClick = {
+                            // One-way save: once saved, the button disables and
+                            // removal lives behind the ✖ Remove confirmation —
+                            // no silent toggle back to "Save".
+                            isSaving = true
+                            scope.launch {
+                                OfflineManager.saveOfflineResources(course.code, allResources)
+                                isSaving = false
+                            }
+                        },
+                        enabled = !isSaving && allResources.isNotEmpty() && !savedOffline,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (savedOffline)
+                                MaterialTheme.colorScheme.tertiaryContainer
+                            else MaterialTheme.colorScheme.primary,
+                            contentColor = if (savedOffline)
+                                MaterialTheme.colorScheme.onTertiaryContainer
+                            else MaterialTheme.colorScheme.onPrimary
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            text = if (savedOffline) "✓ Saved offline" else "💾 Save course offline",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if (savedOffline) {
+                        TextButton(onClick = { showRemoveConfirm = true }) {
+                            Text(
+                                text = "✖ Remove",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
                 }
                 val usedMb = remember(offlineTick, isSaving) {
                     OfflineManager.getUsedBytes() / (1024 * 1024)
@@ -490,6 +507,32 @@ fun DocumentViewerScreen(
                     text = "$usedMb / $maxMb MB",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (showRemoveConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showRemoveConfirm = false },
+                    title = { Text("Remove offline copy?") },
+                    text = {
+                        Text("Remove ${course.code}'s saved files from this device? " +
+                            "You can re-download them anytime while connected.")
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showRemoveConfirm = false
+                            isSaving = true
+                            scope.launch {
+                                OfflineManager.removeOffline(course.code)
+                                isSaving = false
+                            }
+                        }) {
+                            Text("Remove", color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showRemoveConfirm = false }) { Text("Cancel") }
+                    }
                 )
             }
         }
