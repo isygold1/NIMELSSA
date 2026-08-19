@@ -44,7 +44,9 @@ object OfflineManager {
     /** Initialise with a Context (call from Application.onCreate()) */
     fun init(context: Context) {
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        cacheBase = File(context.cacheDir, "offline").also { it.mkdirs() }
+        // Downloads live in app-private filesDir — system/security apps that
+        // "clear cache" wipe cacheDir and would delete every saved file.
+        cacheBase = File(context.filesDir, "offline").also { it.mkdirs() }
         appContext = context.applicationContext
         Log.d(TAG, "Initialised. ${getSavedCodes().size} courses saved.")
     }
