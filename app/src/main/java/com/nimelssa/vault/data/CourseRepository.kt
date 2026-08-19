@@ -151,6 +151,15 @@ object CourseRepository {
             val snap = firestore.collection(COLLECTION).get().await()
 
             if (snap.isEmpty) {
+                // Empty remote snap: only seed on a true cold start (nothing in
+                // memory). Offline/unavailable Firestore can return an empty set
+                // while we already hold good in-memory courses — reseeding would
+                // wipe scan-added cards and break offline navigation ("Course not
+                // found" when opening a card).
+                if (_courses.value.isNotEmpty()) {
+                    Log.w(TAG, "Empty courses snap but ${_courses.value.size} in memory — keeping them")
+                    return
+                }
                 Log.d(TAG, "Courses collection empty — seeding with defaults")
                 seedDefaultCourses()
                 // Reload after seeding
@@ -193,9 +202,15 @@ object CourseRepository {
             Log.d(TAG, "Loaded ${_courses.value.size} courses from Firestore")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load courses from Firestore", e)
-            // Fallback to in-memory default list so workspace is never empty
-            _courses.value = getDefaultCourses()
-            Log.d(TAG, "Using ${_courses.value.size} default courses as fallback")
+            // Offline/transient failure with stale data: keep the last-known
+            // list so course cards (incl. scan-added ones) still open. Only
+            // fall back to defaults on a true cold start with nothing cached.
+            if (_courses.value.isEmpty()) {
+                _courses.value = getDefaultCourses()
+                Log.d(TAG, "Using ${_courses.value.size} default courses as fallback")
+            } else {
+                Log.w(TAG, "Keeping ${_courses.value.size} cached courses after fetch failure")
+            }
         }
     }
 
