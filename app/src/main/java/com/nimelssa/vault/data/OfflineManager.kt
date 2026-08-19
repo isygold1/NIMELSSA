@@ -236,9 +236,8 @@ object OfflineManager {
      * Returns null when there is nothing downloadable.
      */
     private fun downloadUrlFor(resource: Resource): String? {
-        val fileId = resource.fileId
-            .ifBlank { driveFileIdFromUrl(resource.masterUrl) }
-            .trim()
+        val fileId = (resource.fileId
+            .ifBlank { driveFileIdFromUrl(resource.masterUrl) } ?: "").trim()
         if (fileId.isNotBlank()) {
             // confirm=t skips Drive's "large file" HTML confirmation page for
             // publicly shared files (harmless when not needed).
