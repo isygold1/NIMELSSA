@@ -48,7 +48,13 @@ object CourseRepository {
             Log.d(TAG, "Loaded ${_aliases.value.size} course-code aliases")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load course-code aliases", e)
-            _aliases.value = emptyMap()
+            // Offline: fall back to the aliases snapshot cached on disk so
+            // variant codes still resolve to their canonical course.
+            val cached = LocalCache.readCourses()
+            _aliases.value = cached?.second ?: emptyMap()
+            if (_aliases.value.isNotEmpty()) {
+                Log.d(TAG, "Using ${_aliases.value.size} aliases from disk cache")
+            }
         }
     }
 
@@ -200,14 +206,25 @@ object CourseRepository {
             }
 
             Log.d(TAG, "Loaded ${_courses.value.size} courses from Firestore")
+            // Snapshot for offline cold starts — next offline launch reads
+            // this instead of Firestore.
+            LocalCache.cacheCourses(_courses.value, _aliases.value)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load courses from Firestore", e)
             // Offline/transient failure with stale data: keep the last-known
-            // list so course cards (incl. scan-added ones) still open. Only
-            // fall back to defaults on a true cold start with nothing cached.
+            // list so course cards (incl. scan-added ones) still open. On a
+            // true cold start with nothing in memory, fall back to the disk
+            // cache first, then to the hardcoded defaults.
             if (_courses.value.isEmpty()) {
-                _courses.value = getDefaultCourses()
-                Log.d(TAG, "Using ${_courses.value.size} default courses as fallback")
+                val cached = LocalCache.readCourses()
+                if (cached != null && cached.first.isNotEmpty()) {
+                    _courses.value = cached.first
+                    if (_aliases.value.isEmpty()) _aliases.value = cached.second
+                    Log.d(TAG, "Using ${_courses.value.size} courses from disk cache")
+                } else {
+                    _courses.value = getDefaultCourses()
+                    Log.d(TAG, "Using ${_courses.value.size} default courses as fallback")
+                }
             } else {
                 Log.w(TAG, "Keeping ${_courses.value.size} cached courses after fetch failure")
             }

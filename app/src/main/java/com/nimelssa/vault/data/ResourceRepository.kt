@@ -122,17 +122,30 @@ object ResourceRepository {
             Log.e(TAG, "Failed to load level_textbooks", e)
         }
 
-        if (!resourcesFetchOk && previous.isNotEmpty()) {
-            // Offline or transient fetch failure with stale data available —
-            // keep the last-known shelves instead of showing empty lists.
+        if (!resourcesFetchOk) {
+            // Offline or transient failure with stale data available — keep
+            // the last-known shelves instead of showing empty lists. On a true
+            // cold start (nothing in memory), serve the disk snapshot so the
+            // per-file cards still appear inside course cards.
             // Assumption: legacy/level fetch results are secondary to the main
             // catalog, so they're dropped in this rare path rather than merged.
-            Log.w(TAG, "Primary resource fetch failed — keeping ${previous.size} cached shelf bucket(s)")
-            _resources.value = previous
-            return
+            if (previous.isNotEmpty()) {
+                Log.w(TAG, "Primary resource fetch failed — keeping ${previous.size} cached shelf bucket(s)")
+                _resources.value = previous
+                return
+            }
+            val cached = LocalCache.readResources()
+            if (cached != null) {
+                _resources.value = cached
+                Log.d(TAG, "Using ${cached.values.sumOf { it.size }} resources from disk cache")
+                return
+            }
         }
 
         _resources.value = map
+        // Snapshot for offline cold starts — next offline launch reads this
+        // instead of Firestore.
+        LocalCache.cacheResources(map)
         Log.d(TAG, "Total resources loaded: ${map.values.sumOf { it.size }}")
     }
 
