@@ -32,10 +32,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.getDistance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.calculatePan
-import androidx.compose.ui.input.pointer.calculateZoom
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -211,8 +210,28 @@ private fun ZoomablePageImage(
                     do {
                         val event = awaitPointerEvent()
                         val pointerCount = event.changes.count { it.pressed }
-                        val zoomChange = event.calculateZoom()
-                        val panChange = event.calculatePan()
+                        // Zoom/pan are computed manually (distance ratio +
+                        // centroid delta) instead of the calculate* helpers,
+                        // which aren't public API in this Compose version.
+                        val zoomChange = if (pointerCount >= 2 && event.changes.size >= 2) {
+                            val a = event.changes[0].position
+                            val b = event.changes[1].position
+                            val pa = event.changes[0].previousPosition
+                            val pb = event.changes[1].previousPosition
+                            val cur = (a - b).getDistance()
+                            val prev = (pa - pb).getDistance()
+                            if (prev > 0f) cur / prev else 1f
+                        } else {
+                            1f
+                        }
+                        val panChange = if (pointerCount >= 2 && event.changes.isNotEmpty()) {
+                            val sum = event.changes.fold(Offset.Zero) { acc, c ->
+                                acc + (c.position - c.previousPosition)
+                            }
+                            Offset(sum.x / event.changes.size, sum.y / event.changes.size)
+                        } else {
+                            Offset.Zero
+                        }
                         // Single finger at 1× must NOT consume: the parent
                         // LazyColumn uses the drag to scroll through pages.
                         if (!handled && pointerCount < 2 && scale <= 1f) {
