@@ -443,6 +443,12 @@ fun DocumentViewerScreen(
                         savingIds = savingIds - resource.id
                         offlineTick++
                     }
+                },
+                onDeleteResource = { resource ->
+                    scope.launch {
+                        OfflineManager.deleteSingleResource(course.code, resource)
+                        offlineTick++
+                    }
                 }
             )
         }
@@ -560,7 +566,8 @@ private fun ResourceListView(
     onOpenResource: (Resource, String, File?) -> Unit,
     savingIds: Set<String> = emptySet(),
     offlineTick: Int = 0,
-    onSaveResource: ((Resource) -> Unit)? = null
+    onSaveResource: ((Resource) -> Unit)? = null,
+    onDeleteResource: ((Resource) -> Unit)? = null
 ) {
     Column(
         modifier = modifier
@@ -617,7 +624,8 @@ private fun ResourceListView(
                     onOpenResource = onOpenResource,
                     savingIds = savingIds,
                     offlineTick = offlineTick,
-                    onSaveResource = onSaveResource
+                    onSaveResource = onSaveResource,
+                    onDeleteResource = onDeleteResource
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
@@ -634,7 +642,8 @@ private fun ResourceListView(
                     onOpenResource = onOpenResource,
                     savingIds = savingIds,
                     offlineTick = offlineTick,
-                    onSaveResource = onSaveResource
+                    onSaveResource = onSaveResource,
+                    onDeleteResource = onDeleteResource
                 )
             } else {
                 ResourceListSection(
@@ -644,7 +653,8 @@ private fun ResourceListView(
                     onOpenResource = onOpenResource,
                     savingIds = savingIds,
                     offlineTick = offlineTick,
-                    onSaveResource = onSaveResource
+                    onSaveResource = onSaveResource,
+                    onDeleteResource = onDeleteResource
                 )
             }
         } else {
@@ -728,7 +738,8 @@ private fun ResourceListSection(
     onOpenResource: (Resource, String, File?) -> Unit,
     savingIds: Set<String> = emptySet(),
     offlineTick: Int = 0,
-    onSaveResource: ((Resource) -> Unit)? = null
+    onSaveResource: ((Resource) -> Unit)? = null,
+    onDeleteResource: ((Resource) -> Unit)? = null
 ) {
     // offlineTick is read here so the section recomposes after any save and
     // freshly queries OfflineManager for each card's saved state.
@@ -750,6 +761,9 @@ private fun ResourceListSection(
             isSaving = resource.id in savingIds,
             onSave = if (onSaveResource != null && isOnline && !saved) {
                 { onSaveResource(resource) }
+            } else null,
+            onDelete = if (onDeleteResource != null && saved) {
+                { onDeleteResource(resource) }
             } else null,
             onOpen = { onOpenResource(resource, url, localFile?.let { File(it) }) }
         )
@@ -779,6 +793,7 @@ private fun ResourceCard(
     isOnline: Boolean,
     isSaving: Boolean = false,
     onSave: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
     onOpen: () -> Unit
 ) {
     val canOpen = isOnline || isAvailableOffline
@@ -854,8 +869,9 @@ private fun ResourceCard(
                 }
             }
 
-            // Per-file save: ⬇️ at the card's top-right, only while online and
-            // not already saved — the single source of downloads now.
+            // Per-file action at the card's top-right: ⬇️ to save (online, not saved)
+            // or 🗑️ to delete the saved copy. Only one shows at a time, so
+            // the single download button never doubles as a silent delete.
             if (onSave != null) {
                 Column(modifier = Modifier.align(Alignment.Top)) {
                     IconButton(
@@ -867,6 +883,15 @@ private fun ResourceCard(
                             text = if (isSaving) "⏳" else "⬇️",
                             fontSize = 16.sp
                         )
+                    }
+                }
+            } else if (onDelete != null) {
+                Column(modifier = Modifier.align(Alignment.Top)) {
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Text("🗑️", fontSize = 14.sp)
                     }
                 }
             }

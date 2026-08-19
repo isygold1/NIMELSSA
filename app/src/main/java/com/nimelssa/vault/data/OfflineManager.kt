@@ -178,6 +178,36 @@ object OfflineManager {
         return base.walkTopDown().filter { it.isFile }.sumOf { it.length() }
     }
 
+    /**
+     * Deletes a single saved resource (internal copy + its SAF mirror).
+     * If that was the last file for the course, the course's saved flag is
+     * cleared so the sticky bar flips back to "Save course offline".
+     */
+    fun deleteSingleResource(courseCode: String, resource: Resource) {
+        val local = getLocalFile(courseCode, resource.resourceType) ?: return
+        val file = File(local)
+        val removed = file.exists() && file.delete()
+
+        val context = appContext
+        val uriStr = getUserFolderUri()
+        if (context != null && !uriStr.isNullOrBlank()) {
+            runCatching {
+                val docs = DocumentFile.fromTreeUri(context, Uri.parse(uriStr))
+                docs?.findFile(courseCode)?.findFile(file.name)?.delete()
+            }.onFailure { Log.e(TAG, "Failed to remove mirror ${file.name} for $courseCode", it) }
+        }
+
+        val dir = File(cacheBase, courseCode)
+        val hasRemaining = dir.listFiles()?.any { it.isFile } == true
+        if (!hasRemaining) {
+            val codes = getSavedCodes().toMutableSet()
+            codes.remove(courseCode)
+            prefs?.edit()?.putStringSet(KEY_OFFLINE_CODES, codes)?.apply()
+        }
+
+        Log.d(TAG, "Deleted single resource ${file.name} for $courseCode (removed=$removed)")
+    }
+
     /** Max cache size in bytes (300 MB). */
     fun getMaxBytes(): Long = MAX_CACHE_BYTES
 
