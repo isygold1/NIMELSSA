@@ -215,8 +215,6 @@ private fun VaultScaffold(
         }
     }
 }
-    }
-}
 
 object Routes {
     const val AUTH = "auth"
