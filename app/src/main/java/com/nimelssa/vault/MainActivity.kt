@@ -135,63 +135,32 @@ fun MainApp() {
         else -> BottomNavTab.WORKSPACE
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = currentRoute?.startsWith("viewer/") != true,
-        drawerContent = {
-            ModalDrawerSheet {
-                DrawerContent(
-                    user = userState,
-                    onNavigateToCbt = {
-                        scope.launch { drawerState.close() }
-                        navController.navigate(Routes.CBT)
-                    },
-                    onNavigateToProfile = {
-                        scope.launch { drawerState.close() }
-                        navController.navigate(Routes.PROFILE)
-                    },
-                    onNavigateToEmailMod = {
-                        scope.launch { drawerState.close() }
-                        navController.navigate(Routes.EMAIL_CHANGE)
-                    },
-                    onNavigateToReport = {
-                        scope.launch { drawerState.close() }
-                        navController.navigate(Routes.REPORT)
-                    },
-                    onNavigateToReportsDashboard = {
-                        scope.launch { drawerState.close() }
-                        navController.navigate(Routes.REPORTS_DASHBOARD)
-                    },
-                    onNavigateToSettings = {
-                        scope.launch { drawerState.close() }
-                        navController.navigate(Routes.SETTINGS)
-                    },
-                    onLogout = {
-                        scope.launch { drawerState.close() }
-                        UserSession.signOut()
-                    }
-                )
-            }
-        }
-    ) {
+    val isViewer = currentRoute?.startsWith("viewer/") == true
+
+    // The drawer wraps the Scaffold on most screens. On the PDF viewer route
+    // we skip it entirely so its gesture detector can't intercept pinch/pan.
+    @Composable
+    fun AppScaffold() {
         Scaffold(
             bottomBar = {
-                BottomNavBar(
-                    selectedTab = selectedTab,
-                    onTabSelected = { tab ->
-                        val route = when (tab) {
-                            BottomNavTab.WORKSPACE -> Routes.WORKSPACE
-                            BottomNavTab.PROPOSE -> Routes.PROPOSE
-                            BottomNavTab.ADMIN -> Routes.ADMIN
-                        }
-                        navController.navigate(route) {
-                            popUpTo(Routes.WORKSPACE) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    showAdmin = userState.role == UserRole.ADMIN || userState.role == UserRole.REP
-                )
+                if (!isViewer) {
+                    BottomNavBar(
+                        selectedTab = selectedTab,
+                        onTabSelected = { tab ->
+                            val route = when (tab) {
+                                BottomNavTab.WORKSPACE -> Routes.WORKSPACE
+                                BottomNavTab.PROPOSE -> Routes.PROPOSE
+                                BottomNavTab.ADMIN -> Routes.ADMIN
+                            }
+                            navController.navigate(route) {
+                                popUpTo(Routes.WORKSPACE) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        showAdmin = userState.role == UserRole.ADMIN || userState.role == UserRole.REP
+                    )
+                }
             }
         ) { innerPadding ->
             NavHost(
@@ -231,8 +200,6 @@ fun MainApp() {
                         }
                     )
                 }
-
-                // AdminScreen also handles the old Admin tab — just pass repLevel
 
                 composable(Routes.ADMIN) {
                     AdminScreen(
@@ -307,8 +274,55 @@ fun MainApp() {
                     SettingsScreen(
                         onClose = { navController.popBackStack() }
                     )
-                }
             }
         }
     }
+
+    // On viewer routes, render the scaffold directly — no drawer gesture
+    // detector above it to steal pinch/pan events.
+    if (isViewer) {
+        AppScaffold()
+    } else {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                ModalDrawerSheet {
+                    DrawerContent(
+                        user = userState,
+                        onNavigateToCbt = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate(Routes.CBT)
+                        },
+                        onNavigateToProfile = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate(Routes.PROFILE)
+                        },
+                        onNavigateToEmailMod = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate(Routes.EMAIL_CHANGE)
+                        },
+                        onNavigateToReport = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate(Routes.REPORT)
+                        },
+                        onNavigateToReportsDashboard = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate(Routes.REPORTS_DASHBOARD)
+                        },
+                        onNavigateToSettings = {
+                            scope.launch { drawerState.close() }
+                            navController.navigate(Routes.SETTINGS)
+                        },
+                        onLogout = {
+                            scope.launch { drawerState.close() }
+                            UserSession.signOut()
+                        }
+                    )
+                }
+            }
+        ) {
+            AppScaffold()
+        }
+    }
+}
 }
