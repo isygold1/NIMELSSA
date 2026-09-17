@@ -137,6 +137,7 @@ fun MainApp() {
 
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = currentRoute?.startsWith("viewer/") != true,
         drawerContent = {
             ModalDrawerSheet {
                 DrawerContent(
