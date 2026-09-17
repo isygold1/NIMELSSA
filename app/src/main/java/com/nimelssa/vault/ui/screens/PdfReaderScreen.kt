@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -34,13 +35,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import java.io.File
 
 /**
@@ -57,7 +57,6 @@ fun PdfReaderScreen(
     onClose: () -> Unit,
     onOpenBrowser: (() -> Unit)? = null
 ) {
-    // Open the renderer once per file; close it when leaving this screen.
     val rendererResult = remember(file) {
         runCatching { PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)) }
     }
@@ -68,7 +67,6 @@ fun PdfReaderScreen(
 
     val renderer = rendererResult.getOrNull()
     if (renderer == null) {
-        // Unreadable / corrupt / encrypted PDF
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -76,7 +74,7 @@ fun PdfReaderScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(text = "🔒📄", fontSize = MaterialTheme.typography.headlineLarge.fontSize)
+            Text(text = "\uD83D\uDD12\uD83D\uDCC4", fontSize = MaterialTheme.typography.headlineLarge.fontSize)
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "Could not read this PDF",
@@ -99,11 +97,11 @@ fun PdfReaderScreen(
                         containerColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
-                    Text("↗ Open in browser")
+                    Text("\u2197 Open in browser")
                 }
                 Spacer(modifier = Modifier.height(8.dp))
             }
-            TextButton(onClick = onClose) { Text("← Back to resources") }
+            TextButton(onClick = onClose) { Text("\u2190 Back to resources") }
         }
         return
     }
@@ -111,9 +109,8 @@ fun PdfReaderScreen(
     val pageCount = remember(file) { renderer.pageCount }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Page indicator + title
         Text(
-            text = "📄 $title",
+            text = "\uD83D\uDCC4 $title",
             style = MaterialTheme.typography.labelLarge,
             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -175,7 +172,7 @@ private fun PdfPage(file: File, renderer: PdfRenderer, pageIndex: Int) {
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "⚠ Page ${pageIndex + 1} could not be rendered",
+                text = "\u26A0 Page ${pageIndex + 1} could not be rendered",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -185,15 +182,16 @@ private fun PdfPage(file: File, renderer: PdfRenderer, pageIndex: Int) {
 
 /**
  * One rendered page with pinch-zoom + two-finger pan and double-tap
- * 1x ↔ 2.5x toggle. Single-finger swipe still scrolls the page list.
+ * 1x <-> 2.5x toggle. Single-finger swipe still scrolls the page list.
  * Zoom clamps to 1x..5x; pan resets when zoom returns to 1x.
  *
- * Pinch zooms around the centroid (the point between the two fingers)
- * so the content under your fingers stays fixed. Double-tap zooms into
- * the exact tap point. Pan is clamped to image boundaries.
+ * Pinch zooms around the centroid so the content under your fingers
+ * stays fixed. Double-tap zooms into the exact tap point. Pan is
+ * clamped to image boundaries.
  *
- * Everything runs in a single pointerInput block so taps, pinch, and
- * pan never compete for pointer events.
+ * Everything runs in a single pointerInput / awaitEachGesture block.
+ * Double-tap is detected across consecutive gesture iterations via
+ * Compose state — no second pointerInput needed.
  */
 @Composable
 private fun ZoomablePageImage(
@@ -203,6 +201,12 @@ private fun ZoomablePageImage(
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
+
+    // Double-tap tracking — persists across awaitEachGesture iterations.
+    var pendingTapX by remember { mutableFloatStateOf(0f) }
+    var pendingTapY by remember { mutableFloatStateOf(0f) }
+    var pendingTapTime by remember { mutableLongStateOf(0L) }
+    var hasPendingTap by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -215,80 +219,76 @@ private fun ZoomablePageImage(
             )
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    // ── Double-tap detection ──
-                    var lastTapTime = 0L
-                    var lastTapX = 0f
-                    var lastTapY = 0f
-                    val doubleTapSlop = viewSize.width * 0.15f // 15% of screen width
-                    val doubleTapTimeout = 300L // ms
+                    // ── Phase 1: detect tap vs drag ──
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    down.consume()
 
-                    awaitFirstDown(requireUnconsumed = false)
-                    val down1 = currentEvent.changes[0]
-                    val down1X = down1.position.x
-                    val down1Y = down1.position.y
-                    val down1Time = System.currentTimeMillis()
+                    val downX = down.position.x
+                    val downY = down.position.y
+                    var moved = false
 
-                    // Wait for finger up (or second finger down for pinch)
+                    // Track until all fingers lift.
                     do {
                         val event = awaitPointerEvent()
-                        if (event.changes.any { !it.pressed }) break
+                        for (c in event.changes) {
+                            if (c.pressed) {
+                                val dx = c.position.x - c.previousPosition.x
+                                val dy = c.position.y - c.previousPosition.y
+                                if (dx * dx + dy * dy > 64f) moved = true
+                            }
+                        }
+                        if (event.changes.all { !it.pressed }) break
                     } while (true)
 
-                    // Check for second tap (double-tap)
                     val upTime = System.currentTimeMillis()
-                    if (upTime - down1Time < 250) {
-                        // First tap was quick — wait for second DOWN
-                        val secondDown = awaitPointerEvent(
-                            pass = PointerEventPass.Initial
-                        )
-                        val secondPointer = secondDown.changes.firstOrNull { it.pressed }
-                        if (secondPointer != null) {
-                            val dist = Offset(
-                                secondPointer.position.x - down1X,
-                                secondPointer.position.y - down1Y
-                            ).getDistance()
-                            val elapsed = System.currentTimeMillis() - down1Time
-                            if (dist < doubleTapSlop && elapsed < doubleTapTimeout) {
-                                // Double-tap detected — toggle zoom
-                                secondDown.changes.forEach { it.consume() }
+
+                    if (!moved) {
+                        // ── Tap detected — check for double-tap ──
+                        val slop = viewSize.width * 0.15f
+                        if (hasPendingTap) {
+                            val dx = downX - pendingTapX
+                            val dy = downY - pendingTapY
+                            val dt = upTime - pendingTapTime
+                            if (dx * dx + dy * dy < slop * slop && dt < 350) {
+                                // Double-tap confirmed — toggle zoom.
+                                hasPendingTap = false
                                 if (scale > 1f) {
                                     scale = 1f
                                     offset = Offset.Zero
                                 } else {
-                                    val newScale = 2.5f
+                                    val s = 2.5f
                                     val pivotX = viewSize.width / 2f
                                     val pivotY = viewSize.height / 2f
-                                    val cx = secondPointer.position.x - pivotX
-                                    val cy = secondPointer.position.y - pivotY
-                                    offset = Offset(
-                                        cx * (scale - newScale),
-                                        cy * (scale - newScale)
-                                    )
-                                    scale = newScale
+                                    val cx = downX - pivotX
+                                    val cy = downY - pivotY
+                                    offset = Offset(cx * (scale - s), cy * (scale - s))
+                                    scale = s
                                 }
-                                // Drain remaining events so nothing leaks to LazyColumn
-                                do {
-                                    val e = awaitPointerEvent()
-                                    e.changes.forEach { it.consume() }
-                                } while (e.changes.any { it.pressed })
                                 return@awaitEachGesture
                             }
                         }
-                        // Not a valid double-tap — fall through to single-finger
+                        // First tap — record and wait for the next gesture.
+                        pendingTapX = downX
+                        pendingTapY = downY
+                        pendingTapTime = upTime
+                        hasPendingTap = true
+                        return@awaitEachGesture
                     }
 
-                    // ── Single-finger / pinch gesture ──
-                    // Re-enter: single finger is already down (down1).
-                    // We need a fresh gesture loop from here.
-                    awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        var handled = false
-                        do {
-                            val event = awaitPointerEvent()
-                            val pressed = event.changes.filter { it.pressed }
-                            val pointerCount = pressed.size
+                    // Movement happened — not a double-tap.
+                    hasPendingTap = false
 
-                            val zoomChange = if (pointerCount >= 2 && event.changes.size >= 2) {
+                    // ── Phase 2: pinch-zoom / pan gesture ──
+                    // First finger is already down. Continue tracking.
+                    var handled = false
+                    do {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.filter { it.pressed }
+                        val pointerCount = pressed.size
+
+                        // Zoom: distance ratio between two fingers.
+                        val zoomChange =
+                            if (pointerCount >= 2 && event.changes.size >= 2) {
                                 val a = event.changes[0].position
                                 val b = event.changes[1].position
                                 val pa = event.changes[0].previousPosition
@@ -298,42 +298,48 @@ private fun ZoomablePageImage(
                                 if (prev > 0f) cur / prev else 1f
                             } else 1f
 
-                            val panChange = if (pointerCount >= 2 && event.changes.isNotEmpty()) {
+                        // Pan: centroid movement.
+                        val panChange =
+                            if (pointerCount >= 2 && event.changes.isNotEmpty()) {
                                 val sum = event.changes.fold(Offset.Zero) { acc, c ->
                                     acc + (c.position - c.previousPosition)
                                 }
                                 Offset(sum.x / event.changes.size, sum.y / event.changes.size)
                             } else Offset.Zero
 
-                            // Single finger at 1× — let LazyColumn scroll
-                            if (!handled && pointerCount < 2 && scale <= 1f) {
-                                break
-                            }
-                            handled = true
-                            event.changes.forEach { it.consume() }
+                        // Single finger at 1x — let LazyColumn scroll.
+                        if (!handled && pointerCount < 2 && scale <= 1f) {
+                            break
+                        }
+                        handled = true
+                        event.changes.forEach { it.consume() }
 
-                            val newScale = (scale * zoomChange).coerceIn(1f, 5f)
-                            if (newScale > 1f && event.changes.size >= 2) {
-                                val cx = (event.changes[0].position.x + event.changes[1].position.x) / 2f
-                                val cy = (event.changes[0].position.y + event.changes[1].position.y) / 2f
-                                val pivotX = viewSize.width / 2f
-                                val pivotY = viewSize.height / 2f
-                                val cxP = cx - pivotX
-                                val cyP = cy - pivotY
-                                val newTX = cxP * (scale - newScale) + offset.x + panChange.x
-                                val newTY = cyP * (scale - newScale) + offset.y + panChange.y
-                                val maxPanX = viewSize.width * (newScale - 1f) / 2f
-                                val maxPanY = viewSize.height * (newScale - 1f) / 2f
-                                offset = Offset(
-                                    newTX.coerceIn(-maxPanX, maxPanX),
-                                    newTY.coerceIn(-maxPanY, maxPanY)
-                                )
-                            } else {
-                                offset = Offset.Zero
-                            }
-                            scale = newScale
-                        } while (event.changes.any { it.pressed })
-                    }
+                        val newScale = (scale * zoomChange).coerceIn(1f, 5f)
+                        if (newScale > 1f && event.changes.size >= 2) {
+                            // Pinch centroid relative to composable center.
+                            val cx =
+                                (event.changes[0].position.x + event.changes[1].position.x) / 2f
+                            val cy =
+                                (event.changes[0].position.y + event.changes[1].position.y) / 2f
+                            val pivotX = viewSize.width / 2f
+                            val pivotY = viewSize.height / 2f
+                            val cxP = cx - pivotX
+                            val cyP = cy - pivotY
+                            // Keep the point under the centroid fixed on screen.
+                            val newTX = cxP * (scale - newScale) + offset.x + panChange.x
+                            val newTY = cyP * (scale - newScale) + offset.y + panChange.y
+                            // Clamp to image boundaries.
+                            val maxPanX = viewSize.width * (newScale - 1f) / 2f
+                            val maxPanY = viewSize.height * (newScale - 1f) / 2f
+                            offset = Offset(
+                                newTX.coerceIn(-maxPanX, maxPanX),
+                                newTY.coerceIn(-maxPanY, maxPanY)
+                            )
+                        } else {
+                            offset = Offset.Zero
+                        }
+                        scale = newScale
+                    } while (event.changes.any { it.pressed })
                 }
             },
         contentAlignment = Alignment.Center
