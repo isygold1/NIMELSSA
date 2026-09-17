@@ -59,6 +59,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             NIMELSSATheme {
                 MainApp()
+            }
+        }
     }
 }
 
