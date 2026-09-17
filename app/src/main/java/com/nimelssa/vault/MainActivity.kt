@@ -59,8 +59,160 @@ class MainActivity : ComponentActivity() {
         setContent {
             NIMELSSATheme {
                 MainApp()
+    }
+}
+
+/**
+ * Top-level Scaffold + NavHost.  Extracted from MainApp so that on the viewer
+ * route it can be rendered *without* a ModalNavigationDrawer parent — the
+ * drawer's gesture detector was intercepting pinch/pan events.
+ */
+@Composable
+private fun VaultScaffold(
+    navController: androidx.navigation.NavHostController,
+    userState: com.nimelssa.vault.data.UserState,
+    drawerState: androidx.compose.material3.DrawerState,
+    scope: kotlinx.coroutines.CoroutineScope,
+    selectedTab: com.nimelssa.vault.ui.components.BottomNavTab,
+    showBottomBar: Boolean,
+) {
+    Scaffold(
+        bottomBar = {
+            if (showBottomBar) {
+                BottomNavBar(
+                    selectedTab = selectedTab,
+                    onTabSelected = { tab ->
+                        val route = when (tab) {
+                            BottomNavTab.WORKSPACE -> Routes.WORKSPACE
+                            BottomNavTab.PROPOSE -> Routes.PROPOSE
+                            BottomNavTab.ADMIN -> Routes.ADMIN
+                        }
+                        navController.navigate(route) {
+                            popUpTo(Routes.WORKSPACE) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    showAdmin = userState.role == UserRole.ADMIN || userState.role == UserRole.REP
+                )
             }
         }
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = Routes.WORKSPACE,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            composable(Routes.WORKSPACE) {
+                WorkspaceScreen(
+                    onOpenViewer = { course, resourceType ->
+                        navController.navigate(Routes.viewerRoute(course.code, resourceType, course.level))
+                    },
+                    onNavigateToPropose = {
+                        navController.navigate(Routes.PROPOSE) {
+                            popUpTo(Routes.WORKSPACE) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onOpenDrawer = {
+                        scope.launch { drawerState.open() }
+                    }
+                )
+            }
+
+            composable(Routes.PROPOSE) {
+                ProposeScreen(
+                    onProposed = {
+                        navController.navigate(Routes.WORKSPACE) {
+                            popUpTo(Routes.WORKSPACE) { saveState = true }
+                        }
+                    },
+                    onOpenDrawer = {
+                        scope.launch { drawerState.open() }
+                    }
+                )
+            }
+
+            composable(Routes.ADMIN) {
+                AdminScreen(
+                    repLevel = userState.repLevel,
+                    onPreview = { course, resourceType ->
+                        navController.navigate(Routes.viewerRoute(course.code, resourceType, course.level))
+                    },
+                    onOpenDrawer = {
+                        scope.launch { drawerState.open() }
+                    }
+                )
+            }
+
+            composable(
+                route = Routes.VIEWER,
+                arguments = listOf(
+                    navArgument("courseCode") { type = NavType.StringType },
+                    navArgument("resourceType") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                    navArgument("level") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    }
+                )
+            ) { backStackEntry ->
+                val courseCode = backStackEntry.arguments?.getString("courseCode") ?: ""
+                val resourceType = backStackEntry.arguments?.getString("resourceType")
+                val level = backStackEntry.arguments?.getString("level")
+                DocumentViewerScreen(
+                    courseCode = courseCode,
+                    initialResourceType = resourceType,
+                    levelHint = level,
+                    onClose = { navController.popBackStack() }
+                )
+            }
+
+            composable(Routes.PROFILE) {
+                ProfileScreen(
+                    onClose = { navController.popBackStack() }
+                )
+            }
+
+            composable(Routes.CBT) {
+                CbtExamScreen(
+                    onClose = { navController.popBackStack() }
+                )
+            }
+
+            composable(Routes.EMAIL_CHANGE) {
+                EmailChangeScreen(
+                    onClose = { navController.popBackStack() }
+                )
+            }
+
+            composable(Routes.REPORT) {
+                ReportScreen(
+                    onClose = { navController.popBackStack() }
+                )
+            }
+
+            composable(Routes.REPORTS_DASHBOARD) {
+                ReportsDashboardScreen(
+                    onClose = { navController.popBackStack() }
+                )
+            }
+
+            composable(Routes.SETTINGS) {
+                SettingsScreen(
+                    onClose = { navController.popBackStack() }
+                )
+            }
+        }
+    }
+}
     }
 }
 
@@ -137,151 +289,17 @@ fun MainApp() {
 
     val isViewer = currentRoute?.startsWith("viewer/") == true
 
-    // The drawer wraps the Scaffold on most screens. On the PDF viewer route
-    // we skip it entirely so its gesture detector can't intercept pinch/pan.
-    @Composable
-    fun AppScaffold() {
-        Scaffold(
-            bottomBar = {
-                if (!isViewer) {
-                    BottomNavBar(
-                        selectedTab = selectedTab,
-                        onTabSelected = { tab ->
-                            val route = when (tab) {
-                                BottomNavTab.WORKSPACE -> Routes.WORKSPACE
-                                BottomNavTab.PROPOSE -> Routes.PROPOSE
-                                BottomNavTab.ADMIN -> Routes.ADMIN
-                            }
-                            navController.navigate(route) {
-                                popUpTo(Routes.WORKSPACE) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        showAdmin = userState.role == UserRole.ADMIN || userState.role == UserRole.REP
-                    )
-                }
-            }
-        ) { innerPadding ->
-            NavHost(
-                navController = navController,
-                startDestination = Routes.WORKSPACE,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                composable(Routes.WORKSPACE) {
-                    WorkspaceScreen(
-                        onOpenViewer = { course, resourceType ->
-                            navController.navigate(Routes.viewerRoute(course.code, resourceType, course.level))
-                        },
-                        onNavigateToPropose = {
-                            navController.navigate(Routes.PROPOSE) {
-                                popUpTo(Routes.WORKSPACE) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        onOpenDrawer = {
-                            scope.launch { drawerState.open() }
-                        }
-                    )
-                }
-
-                composable(Routes.PROPOSE) {
-                    ProposeScreen(
-                        onProposed = {
-                            navController.navigate(Routes.WORKSPACE) {
-                                popUpTo(Routes.WORKSPACE) { saveState = true }
-                            }
-                        },
-                        onOpenDrawer = {
-                            scope.launch { drawerState.open() }
-                        }
-                    )
-                }
-
-                composable(Routes.ADMIN) {
-                    AdminScreen(
-                        repLevel = userState.repLevel,
-                        onPreview = { course, resourceType ->
-                            navController.navigate(Routes.viewerRoute(course.code, resourceType, course.level))
-                        },
-                        onOpenDrawer = {
-                            scope.launch { drawerState.open() }
-                        }
-                    )
-                }
-
-                composable(
-                    route = Routes.VIEWER,
-                    arguments = listOf(
-                        navArgument("courseCode") { type = NavType.StringType },
-                        navArgument("resourceType") {
-                            type = NavType.StringType
-                            nullable = true
-                            defaultValue = null
-                        },
-                        navArgument("level") {
-                            type = NavType.StringType
-                            nullable = true
-                            defaultValue = null
-                        }
-                    )
-                ) { backStackEntry ->
-                    val courseCode = backStackEntry.arguments?.getString("courseCode") ?: ""
-                    val resourceType = backStackEntry.arguments?.getString("resourceType")
-                    val level = backStackEntry.arguments?.getString("level")
-                    DocumentViewerScreen(
-                        courseCode = courseCode,
-                        initialResourceType = resourceType,
-                        levelHint = level,
-                        onClose = { navController.popBackStack() }
-                    )
-                }
-
-                composable(Routes.PROFILE) {
-                    ProfileScreen(
-                        onClose = { navController.popBackStack() }
-                    )
-                }
-
-                composable(Routes.CBT) {
-                    CbtExamScreen(
-                        onClose = { navController.popBackStack() }
-                    )
-                }
-
-                composable(Routes.EMAIL_CHANGE) {
-                    EmailChangeScreen(
-                        onClose = { navController.popBackStack() }
-                    )
-                }
-
-                composable(Routes.REPORT) {
-                    ReportScreen(
-                        onClose = { navController.popBackStack() }
-                    )
-                }
-
-                composable(Routes.REPORTS_DASHBOARD) {
-                    ReportsDashboardScreen(
-                        onClose = { navController.popBackStack() }
-                    )
-                }
-
-                composable(Routes.SETTINGS) {
-                    SettingsScreen(
-                        onClose = { navController.popBackStack() }
-                    )
-            }
-        }
-    }
-
     // On viewer routes, render the scaffold directly — no drawer gesture
     // detector above it to steal pinch/pan events.
     if (isViewer) {
-        AppScaffold()
+        VaultScaffold(
+            navController = navController,
+            userState = userState,
+            drawerState = drawerState,
+            scope = scope,
+            selectedTab = selectedTab,
+            showBottomBar = false
+        )
     } else {
         ModalNavigationDrawer(
             drawerState = drawerState,
@@ -321,8 +339,14 @@ fun MainApp() {
                 }
             }
         ) {
-            AppScaffold()
+            VaultScaffold(
+                navController = navController,
+                userState = userState,
+                drawerState = drawerState,
+                scope = scope,
+                selectedTab = selectedTab,
+                showBottomBar = true
+            )
         }
     }
-}
 }
