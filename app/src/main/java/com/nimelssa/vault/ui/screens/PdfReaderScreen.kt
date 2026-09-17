@@ -36,9 +36,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import java.io.File
 
 /**
@@ -185,6 +187,10 @@ private fun PdfPage(file: File, renderer: PdfRenderer, pageIndex: Int) {
  * One rendered page with pinch-zoom + two-finger pan and double-tap
  * 1x ↔ 2.5x toggle. Single-finger swipe still scrolls the page list.
  * Zoom clamps to 1x..5x; pan resets when zoom returns to 1x.
+ *
+ * Pinch zooms around the centroid (the point between the two fingers)
+ * so the content under your fingers stays fixed. Double-tap zooms into
+ * the exact tap point. Pan is clamped to image boundaries.
  */
 @Composable
 private fun ZoomablePageImage(
@@ -193,9 +199,11 @@ private fun ZoomablePageImage(
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    var viewSize by remember { mutableStateOf(IntSize.Zero) }
 
     Box(
         modifier = modifier
+            .onSizeChanged { viewSize = it }
             .graphicsLayer(
                 scaleX = scale,
                 scaleY = scale,
@@ -209,9 +217,7 @@ private fun ZoomablePageImage(
                     do {
                         val event = awaitPointerEvent()
                         val pointerCount = event.changes.count { it.pressed }
-                        // Zoom/pan are computed manually (distance ratio +
-                        // centroid delta) instead of the calculate* helpers,
-                        // which aren't public API in this Compose version.
+                        // Zoom: distance ratio between two fingers.
                         val zoomChange = if (pointerCount >= 2 && event.changes.size >= 2) {
                             val a = event.changes[0].position
                             val b = event.changes[1].position
@@ -223,6 +229,7 @@ private fun ZoomablePageImage(
                         } else {
                             1f
                         }
+                        // Pan: centroid movement (average finger delta).
                         val panChange = if (pointerCount >= 2 && event.changes.isNotEmpty()) {
                             val sum = event.changes.fold(Offset.Zero) { acc, c ->
                                 acc + (c.position - c.previousPosition)
@@ -238,25 +245,52 @@ private fun ZoomablePageImage(
                         }
                         handled = true
                         event.changes.forEach { it.consume() }
-                        scale = (scale * zoomChange).coerceIn(1f, 5f)
-                        if (scale > 1f) {
+                        val newScale = (scale * zoomChange).coerceIn(1f, 5f)
+                        if (newScale > 1f && event.changes.size >= 2) {
+                            // Pinch centroid relative to the composable's center
+                            // (graphicsLayer pivot defaults to center).
+                            val cx = (event.changes[0].position.x + event.changes[1].position.x) / 2f
+                            val cy = (event.changes[0].position.y + event.changes[1].position.y) / 2f
+                            val pivotX = viewSize.width / 2f
+                            val pivotY = viewSize.height / 2f
+                            val cxPrime = cx - pivotX
+                            val cyPrime = cy - pivotY
+                            // Keep the point under the centroid fixed on screen
+                            // while scaling, then add the finger pan.
+                            val newTX = cxPrime * (scale - newScale) + offset.x + panChange.x
+                            val newTY = cyPrime * (scale - newScale) + offset.y + panChange.y
+                            // Clamp to image boundaries — can never drag past edge.
+                            val maxPanX = viewSize.width * (newScale - 1f) / 2f
+                            val maxPanY = viewSize.height * (newScale - 1f) / 2f
                             offset = Offset(
-                                (offset.x + panChange.x).coerceIn(-3000f, 3000f),
-                                (offset.y + panChange.y).coerceIn(-3000f, 3000f)
+                                newTX.coerceIn(-maxPanX, maxPanX),
+                                newTY.coerceIn(-maxPanY, maxPanY)
                             )
                         } else {
                             offset = Offset.Zero
                         }
+                        scale = newScale
                     } while (event.changes.any { it.pressed })
                 }
             }
             .pointerInput(Unit) {
-                detectTapGestures(onDoubleTap = {
+                detectTapGestures(onDoubleTap = { tapOffset ->
                     if (scale > 1f) {
+                        // Reset to 1× — snap to center.
                         scale = 1f
                         offset = Offset.Zero
                     } else {
-                        scale = 2.5f
+                        // Zoom to 2.5× centered on the tap point.
+                        val newScale = 2.5f
+                        val pivotX = viewSize.width / 2f
+                        val pivotY = viewSize.height / 2f
+                        val cxPrime = tapOffset.x - pivotX
+                        val cyPrime = tapOffset.y - pivotY
+                        offset = Offset(
+                            cxPrime * (scale - newScale),
+                            cyPrime * (scale - newScale)
+                        )
+                        scale = newScale
                     }
                 })
             },
