@@ -85,12 +85,19 @@ object OfflineManager {
      * Saves a single resource for a course (per-file download button).
      * The internal copy lands in the offline store; if the user picked a
      * download folder in Settings, a mirror copy is written there too.
+     *
+     * @param onProgress called with (bytesRead, totalBytes) during the
+     *   HTTP download.  totalBytes may be -1 when the server does not
+     *   send a Content-Length header.  Called from the IO dispatcher.
      */
-    suspend fun saveSingleResource(courseCode: String, resource: Resource) =
-        withContext(Dispatchers.IO) {
+    suspend fun saveSingleResource(
+        courseCode: String,
+        resource: Resource,
+        onProgress: ((bytesRead: Long, totalBytes: Long) -> Unit)? = null
+    ) = withContext(Dispatchers.IO) {
             val dir = File(cacheBase, courseCode).also { it.mkdirs() }
             try {
-                saveOneInto(dir, resource, courseCode)
+                saveOneInto(dir, resource, courseCode, onProgress)
                 Log.d(TAG, "Saved single resource for $courseCode")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to save single resource for $courseCode", e)
@@ -250,7 +257,12 @@ object OfflineManager {
         }
 
     /** Downloads one resource into [dir] if not already present, then mirrors to the user folder. */
-    private fun saveOneInto(dir: File, resource: Resource, courseCode: String) {
+    private fun saveOneInto(
+        dir: File,
+        resource: Resource,
+        courseCode: String,
+        onProgress: ((bytesRead: Long, totalBytes: Long) -> Unit)? = null
+    ) {
         // Always prefer a REAL export link: drive.google.com .../view|open links
         // return the Drive HTML viewer page, not the file bytes — saving that
         // as ".pdf" produced the "broken file" reports in the SAF folder.
@@ -270,7 +282,7 @@ object OfflineManager {
             file.delete()
         }
         if (!file.exists()) {
-            downloadFile(url, file, courseCode)
+            downloadFile(url, file, courseCode, onProgress)
         }
     }
 
@@ -320,7 +332,12 @@ object OfflineManager {
         return getExtension(url)
     }
 
-    private fun downloadFile(urlStr: String, dest: File, courseCode: String) {
+    private fun downloadFile(
+        urlStr: String,
+        dest: File,
+        courseCode: String,
+        onProgress: ((bytesRead: Long, totalBytes: Long) -> Unit)? = null
+    ) {
         val url = URL(urlStr)
         val conn = url.openConnection() as HttpURLConnection
         conn.connectTimeout = 15_000
@@ -328,6 +345,7 @@ object OfflineManager {
         conn.instanceFollowRedirects = true
         try {
             conn.connect()
+            val totalBytes = conn.contentLength.toLong() // -1 when unknown
             conn.inputStream.use { input ->
                 // Peek the first bytes: Drive pages (viewer/confirmation) are
                 // HTML. Saving those as ".pdf" produced broken files — refuse
@@ -344,7 +362,16 @@ object OfflineManager {
                 }
                 FileOutputStream(dest).use { output ->
                     if (n > 0) output.write(head, 0, n)
-                    input.copyTo(output)
+                    // Report the peeked bytes first, then stream with progress.
+                    var bytesRead = n.toLong()
+                    onProgress?.invoke(bytesRead, totalBytes)
+                    val buffer = ByteArray(8192)
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+                        output.write(buffer, 0, read)
+                        bytesRead += read
+                        onProgress?.invoke(bytesRead, totalBytes)
+                    }
                 }
             }
             if (dest.length() == 0L) {

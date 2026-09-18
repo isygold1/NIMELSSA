@@ -138,9 +138,10 @@ fun DocumentViewerScreen(
     var isOnline by remember { mutableStateOf(OfflineManager.isOnline(context)) }
     var isSaving by remember { mutableStateOf(false) }
 
-    // Per-file offline saves: ids currently downloading + a tick bumped after
-    // any save so cards/sticky bar recompose with fresh offline availability.
-    var savingIds by remember { mutableStateOf(setOf<String>()) }
+    // Per-file offline saves: resource id → download progress (0f–1f).
+    // A tick bumped after any save so cards/sticky bar recompose with fresh
+    // offline availability.
+    var downloadProgress by remember { mutableStateOf(mapOf<String, Float>()) }
     var offlineTick by remember { mutableIntStateOf(0) }
     // Whole-course removal requires an explicit confirm — the bar must NOT
     // toggle back to "save" on an accidental second tap.
@@ -434,13 +435,23 @@ fun DocumentViewerScreen(
                         }
                     }
                 },
-                savingIds = savingIds,
+                downloadProgress = downloadProgress,
                 offlineTick = offlineTick,
                 onSaveResource = { resource ->
                     scope.launch {
-                        savingIds = savingIds + resource.id
-                        OfflineManager.saveSingleResource(course.code, resource)
-                        savingIds = savingIds - resource.id
+                        downloadProgress = downloadProgress + (resource.id to 0f)
+                        OfflineManager.saveSingleResource(course.code, resource,
+                            onProgress = { bytesRead, totalBytes ->
+                                val fraction = if (totalBytes > 0) {
+                                    (bytesRead.toFloat() / totalBytes).coerceIn(0f, 0.99f)
+                                } else {
+                                    // Unknown total — show indeterminate pulse.
+                                    -1f
+                                }
+                                downloadProgress = downloadProgress + (resource.id to fraction)
+                            }
+                        )
+                        downloadProgress = downloadProgress - resource.id
                         offlineTick++
                     }
                 },
@@ -564,7 +575,7 @@ private fun ResourceListView(
     isOnline: Boolean,
     filterLabel: String? = null,
     onOpenResource: (Resource, String, File?) -> Unit,
-    savingIds: Set<String> = emptySet(),
+    downloadProgress: Map<String, Float> = emptyMap(),
     offlineTick: Int = 0,
     onSaveResource: ((Resource) -> Unit)? = null,
     onDeleteResource: ((Resource) -> Unit)? = null
@@ -622,7 +633,7 @@ private fun ResourceListView(
                     resources = currentSection,
                     isOnline = isOnline,
                     onOpenResource = onOpenResource,
-                    savingIds = savingIds,
+                    downloadProgress = downloadProgress,
                     offlineTick = offlineTick,
                     onSaveResource = onSaveResource,
                     onDeleteResource = onDeleteResource
@@ -640,7 +651,7 @@ private fun ResourceListView(
                     resources = previousSection,
                     isOnline = isOnline,
                     onOpenResource = onOpenResource,
-                    savingIds = savingIds,
+                    downloadProgress = downloadProgress,
                     offlineTick = offlineTick,
                     onSaveResource = onSaveResource,
                     onDeleteResource = onDeleteResource
@@ -651,7 +662,7 @@ private fun ResourceListView(
                     resources = resources,
                     isOnline = isOnline,
                     onOpenResource = onOpenResource,
-                    savingIds = savingIds,
+                    downloadProgress = downloadProgress,
                     offlineTick = offlineTick,
                     onSaveResource = onSaveResource,
                     onDeleteResource = onDeleteResource
@@ -736,7 +747,7 @@ private fun ResourceListSection(
     resources: List<Resource>,
     isOnline: Boolean,
     onOpenResource: (Resource, String, File?) -> Unit,
-    savingIds: Set<String> = emptySet(),
+    downloadProgress: Map<String, Float> = emptyMap(),
     offlineTick: Int = 0,
     onSaveResource: ((Resource) -> Unit)? = null,
     onDeleteResource: ((Resource) -> Unit)? = null
@@ -758,7 +769,8 @@ private fun ResourceListSection(
             notes = resource.notes,
             isAvailableOffline = saved,
             isOnline = isOnline,
-            isSaving = resource.id in savingIds,
+            isSaving = resource.id in downloadProgress,
+            downloadProgress = downloadProgress[resource.id],
             onSave = if (onSaveResource != null && isOnline && !saved) {
                 { onSaveResource(resource) }
             } else null,
@@ -792,6 +804,7 @@ private fun ResourceCard(
     isAvailableOffline: Boolean,
     isOnline: Boolean,
     isSaving: Boolean = false,
+    downloadProgress: Float? = null,
     onSave: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onOpen: () -> Unit
@@ -873,7 +886,10 @@ private fun ResourceCard(
             // or 🗑️ to delete the saved copy. Only one shows at a time, so
             // the single download button never doubles as a silent delete.
             if (onSave != null) {
-                Column(modifier = Modifier.align(Alignment.Top)) {
+                Column(
+                    modifier = Modifier.align(Alignment.Top),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     IconButton(
                         onClick = onSave,
                         enabled = !isSaving,
@@ -882,6 +898,28 @@ private fun ResourceCard(
                         Text(
                             text = if (isSaving) "⏳" else "⬇️",
                             fontSize = 16.sp
+                        )
+                    }
+                    if (isSaving && downloadProgress != null && downloadProgress >= 0f) {
+                        LinearProgressIndicator(
+                            progress = { downloadProgress },
+                            modifier = Modifier
+                                .width(32.dp)
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(2.dp)),
+                        )
+                        Text(
+                            text = "${(downloadProgress * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 8.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else if (isSaving) {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .width(32.dp)
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(2.dp)),
                         )
                     }
                 }
