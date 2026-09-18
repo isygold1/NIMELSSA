@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import java.io.File
+import kotlin.math.abs
 
 /**
  * Native in-app PDF reader backed by Android's built-in PdfRenderer.
@@ -49,6 +50,10 @@ import java.io.File
  *
  * Pages render lazily (only visible pages exist in memory) at ~1.5x screen
  * width for crisp text, displayed at fit-width.
+ *
+ * Zoom behavior: pinch / one-finger pan / double-tap. When a gesture
+ * settles, the page re-renders its bitmap at the settled zoom so text
+ * stays crisp (capped at [MAX_DETAIL_ZOOM]x to bound memory).
  */
 @Composable
 fun PdfReaderScreen(
@@ -74,7 +79,7 @@ fun PdfReaderScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(text = "\uD83D\uDD12\uD83D\uDCC4", fontSize = MaterialTheme.typography.headlineLarge.fontSize)
+            Text(text = "🔒📄", fontSize = MaterialTheme.typography.headlineLarge.fontSize)
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "Could not read this PDF",
@@ -97,11 +102,11 @@ fun PdfReaderScreen(
                         containerColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
-                    Text("\u2197 Open in browser")
+                    Text("↗ Open in browser")
                 }
                 Spacer(modifier = Modifier.height(8.dp))
             }
-            TextButton(onClick = onClose) { Text("\u2190 Back to resources") }
+            TextButton(onClick = onClose) { Text("← Back to resources") }
         }
         return
     }
@@ -110,7 +115,7 @@ fun PdfReaderScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
-            text = "\uD83D\uDCC4 $title",
+            text = "📄 $title",
             style = MaterialTheme.typography.labelLarge,
             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -130,17 +135,29 @@ fun PdfReaderScreen(
     }
 }
 
-/** Renders one PDF page into a bitmap at ~1.5x screen width (lazy, cached per page). */
+/** Cap for the post-gesture re-render zoom — bounds per-page bitmap memory. */
+private const val MAX_DETAIL_ZOOM = 2f
+
+/**
+ * Renders one PDF page into a bitmap at ~1.5x screen width (lazy, cached per
+ * page and per [detailScale]). When a zoom gesture settles the page
+ * re-renders at 1.5x * detailScale so magnified text stays sharp.
+ */
 @Composable
 private fun PdfPage(file: File, renderer: PdfRenderer, pageIndex: Int) {
     val context = LocalContext.current
-    val bitmap = remember(file, pageIndex) {
+
+    // Extra resolution multiplier applied after a pinch/double-tap settles.
+    var detailScale by remember(file, pageIndex) { mutableFloatStateOf(1f) }
+
+    val bitmap = remember(file, pageIndex, detailScale) {
         runCatching {
             val page = renderer.openPage(pageIndex)
             try {
                 val targetWidth =
-                    (context.resources.displayMetrics.widthPixels * 1.5f).coerceAtLeast(1f)
-                val scale = (targetWidth / page.width).coerceIn(1f, 4f)
+                    (context.resources.displayMetrics.widthPixels * 1.5f * detailScale)
+                        .coerceAtLeast(1f)
+                val scale = (targetWidth / page.width).coerceIn(1f, 6f)
                 val bmp = Bitmap.createBitmap(
                     (page.width * scale).toInt().coerceAtLeast(1),
                     (page.height * scale).toInt().coerceAtLeast(1),
@@ -162,7 +179,12 @@ private fun PdfPage(file: File, renderer: PdfRenderer, pageIndex: Int) {
     if (bitmap != null) {
         ZoomablePageImage(
             bitmap = bitmap.asImageBitmap(),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            onZoomSettled = { zoom ->
+                val capped = zoom.coerceIn(1f, MAX_DETAIL_ZOOM)
+                // Ignore small settle jitter to avoid re-render churn.
+                if (abs(capped - detailScale) > 0.15f) detailScale = capped
+            }
         )
     } else {
         Box(
@@ -172,7 +194,7 @@ private fun PdfPage(file: File, renderer: PdfRenderer, pageIndex: Int) {
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "\u26A0 Page ${pageIndex + 1} could not be rendered",
+                text = "⚠ Page ${pageIndex + 1} could not be rendered",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -181,25 +203,30 @@ private fun PdfPage(file: File, renderer: PdfRenderer, pageIndex: Int) {
 }
 
 /**
- * One rendered page with pinch-zoom + two-finger pan and double-tap
- * 1x <-> 2.5x toggle. Single-finger swipe still scrolls the page list.
- * Zoom clamps to 1x..5x; pan resets when zoom returns to 1x.
+ * One rendered page with pinch-zoom, ONE-FINGER pan (when zoomed) and
+ * double-tap 1x <-> 2.5x toggle. Single-finger swipe still scrolls the
+ * page list when zoomed out. Zoom clamps to 1x..5x; pan clamps to image
+ * boundaries and resets when zoom returns to 1x.
  *
- * Pinch zooms around the centroid so the content under your fingers
- * stays fixed. Double-tap zooms into the exact tap point. Pan is
- * clamped to image boundaries.
+ * Pan/zoom math anchors the content point under the finger centroid each
+ * frame, so the content under your fingers stays fixed while pinching and
+ * follows the centroid 1:1 while panning — with one or two fingers.
  *
- * Everything runs in a single pointerInput / awaitEachGesture block.
- * Double-tap is detected across consecutive gesture iterations via
- * Compose state — no second pointerInput needed.
+ * [onZoomSettled] fires after any gesture ends so the page can re-render
+ * its bitmap at the settled zoom for crisp text. When a fresh bitmap
+ * arrives the transform resets to 1x (the bitmap already carries the
+ * target resolution).
  */
 @Composable
 private fun ZoomablePageImage(
     bitmap: androidx.compose.ui.graphics.ImageBitmap,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onZoomSettled: (Float) -> Unit = {}
 ) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    // Keyed by bitmap: a re-rendered (higher-res) bitmap arrives as a new
+    // object, so the transform resets — display it at its native scale.
+    var scale by remember(bitmap) { mutableFloatStateOf(1f) }
+    var offset by remember(bitmap) { mutableStateOf(Offset.Zero) }
     var viewSize by remember { mutableStateOf(IntSize.Zero) }
 
     // Double-tap tracking — persists across awaitEachGesture iterations.
@@ -257,13 +284,19 @@ private fun ZoomablePageImage(
                                     offset = Offset.Zero
                                 } else {
                                     val s = 2.5f
-                                    val pivotX = viewSize.width / 2f
-                                    val pivotY = viewSize.height / 2f
-                                    val cx = downX - pivotX
-                                    val cy = downY - pivotY
-                                    offset = Offset(cx * (scale - s), cy * (scale - s))
+                                    val cx = downX - viewSize.width / 2f
+                                    val cy = downY - viewSize.height / 2f
+                                    val maxPanX = viewSize.width * (s - 1f) / 2f
+                                    val maxPanY = viewSize.height * (s - 1f) / 2f
+                                    // Zoom toward the tap point, clamped so
+                                    // the page edge never crosses center.
+                                    offset = Offset(
+                                        (cx * (1f - s)).coerceIn(-maxPanX, maxPanX),
+                                        (cy * (1f - s)).coerceIn(-maxPanY, maxPanY)
+                                    )
                                     scale = s
                                 }
+                                onZoomSettled(scale)
                                 return@awaitEachGesture
                             }
                         }
@@ -284,62 +317,66 @@ private fun ZoomablePageImage(
                     do {
                         val event = awaitPointerEvent()
                         val pressed = event.changes.filter { it.pressed }
-                        val pointerCount = pressed.size
 
-                        // Zoom: distance ratio between two fingers.
+                        // Fully zoomed out + single finger → hand control
+                        // back to the LazyColumn for list scrolling.
+                        if (!handled && pressed.size < 2 && scale <= 1f) break
+                        handled = true
+                        event.changes.forEach { it.consume() }
+
+                        // Zoom: distance ratio between the first two fingers.
                         val zoomChange =
-                            if (pointerCount >= 2 && event.changes.size >= 2) {
-                                val a = event.changes[0].position
-                                val b = event.changes[1].position
-                                val pa = event.changes[0].previousPosition
-                                val pb = event.changes[1].previousPosition
+                            if (pressed.size >= 2) {
+                                val a = pressed[0].position
+                                val b = pressed[1].position
+                                val pa = pressed[0].previousPosition
+                                val pb = pressed[1].previousPosition
                                 val cur = (a - b).getDistance()
                                 val prev = (pa - pb).getDistance()
                                 if (prev > 0f) cur / prev else 1f
                             } else 1f
 
-                        // Pan: centroid movement.
-                        val panChange =
-                            if (pointerCount >= 2 && event.changes.isNotEmpty()) {
-                                val sum = event.changes.fold(Offset.Zero) { acc, c ->
-                                    acc + (c.position - c.previousPosition)
-                                }
-                                Offset(sum.x / event.changes.size, sum.y / event.changes.size)
-                            } else Offset.Zero
-
-                        // Single finger at 1x — let LazyColumn scroll.
-                        if (!handled && pointerCount < 2 && scale <= 1f) {
-                            break
-                        }
-                        handled = true
-                        event.changes.forEach { it.consume() }
-
-                        val newScale = (scale * zoomChange).coerceIn(1f, 5f)
-                        if (newScale > 1f && event.changes.size >= 2) {
-                            // Pinch centroid relative to composable center.
-                            val cx =
-                                (event.changes[0].position.x + event.changes[1].position.x) / 2f
-                            val cy =
-                                (event.changes[0].position.y + event.changes[1].position.y) / 2f
-                            val pivotX = viewSize.width / 2f
-                            val pivotY = viewSize.height / 2f
-                            val cxP = cx - pivotX
-                            val cyP = cy - pivotY
-                            // Keep the point under the centroid fixed on screen.
-                            val newTX = cxP * (scale - newScale) + offset.x + panChange.x
-                            val newTY = cyP * (scale - newScale) + offset.y + panChange.y
-                            // Clamp to image boundaries.
-                            val maxPanX = viewSize.width * (newScale - 1f) / 2f
-                            val maxPanY = viewSize.height * (newScale - 1f) / 2f
-                            offset = Offset(
-                                newTX.coerceIn(-maxPanX, maxPanX),
-                                newTY.coerceIn(-maxPanY, maxPanY)
+                        if (pressed.isNotEmpty()) {
+                            // Centroid of ALL pressed fingers — with a single
+                            // finger this is just that finger, so one-finger
+                            // panning works while zoomed.
+                            val sum = pressed.fold(Offset.Zero) { acc, c ->
+                                acc + c.position
+                            }
+                            val centroid = Offset(
+                                sum.x / pressed.size,
+                                sum.y / pressed.size
                             )
-                        } else {
-                            offset = Offset.Zero
+
+                            val newScale = (scale * zoomChange).coerceIn(1f, 5f)
+                            if (newScale > 1f) {
+                                val pivotX = viewSize.width / 2f
+                                val pivotY = viewSize.height / 2f
+                                // Centroid relative to the composable center.
+                                val relX = centroid.x - pivotX
+                                val relY = centroid.y - pivotY
+                                // Anchor the content point under the centroid:
+                                // it stays fixed under the fingers while
+                                // pinching and follows them 1:1 while panning.
+                                val newTX =
+                                    relX - newScale * (relX - offset.x) / scale
+                                val newTY =
+                                    relY - newScale * (relY - offset.y) / scale
+                                // Clamp to image boundaries.
+                                val maxPanX = viewSize.width * (newScale - 1f) / 2f
+                                val maxPanY = viewSize.height * (newScale - 1f) / 2f
+                                offset = Offset(
+                                    newTX.coerceIn(-maxPanX, maxPanX),
+                                    newTY.coerceIn(-maxPanY, maxPanY)
+                                )
+                            } else {
+                                offset = Offset.Zero
+                            }
+                            scale = newScale
                         }
-                        scale = newScale
                     } while (event.changes.any { it.pressed })
+
+                    if (handled) onZoomSettled(scale)
                 }
             },
         contentAlignment = Alignment.Center
