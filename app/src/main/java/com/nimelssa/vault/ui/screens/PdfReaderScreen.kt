@@ -1,5 +1,7 @@
 package com.nimelssa.vault.ui.screens
 
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
@@ -8,24 +10,37 @@ import android.util.Base64
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.nimelssa.vault.ui.theme.OrientationManager
+import com.nimelssa.vault.ui.theme.OrientationMode
 import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlin.math.min
@@ -35,6 +50,10 @@ import kotlin.math.min
  * Pages are rendered to bitmaps locally (fully offline) and displayed in
  * a WebView, which provides native pinch-zoom, double-tap zoom, and
  * smooth vertical scroll — no custom gesture handling needed.
+ *
+ * In landscape, pages render at 1.5× screen height so the full page fits
+ * vertically; the compact toolbar shows a back button, title, page count,
+ * and browser button in a single row to maximize reading area.
  */
 @Composable
 fun PdfReaderScreen(
@@ -44,6 +63,31 @@ fun PdfReaderScreen(
     onOpenBrowser: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val orientationMode by OrientationManager.mode.collectAsState()
+
+    // Resolve effective landscape: user preference overrides system rotation.
+    val isLandscape = when (orientationMode) {
+        OrientationMode.PORTRAIT -> false
+        OrientationMode.LANDSCAPE -> true
+        OrientationMode.AUTO -> configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    }
+
+    // Lock the activity orientation while the PDF viewer is open.
+    DisposableEffect(orientationMode) {
+        val activity = context.findActivity()
+        val originalOrientation = activity?.requestedOrientation
+        if (orientationMode == OrientationMode.PORTRAIT) {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else if (orientationMode == OrientationMode.LANDSCAPE) {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+        onDispose {
+            if (activity != null && originalOrientation != null) {
+                activity.requestedOrientation = originalOrientation
+            }
+        }
+    }
 
     val rendererResult = remember(file) {
         runCatching {
@@ -100,12 +144,17 @@ fun PdfReaderScreen(
 
     // Render all pages to base64-encoded JPEG strings (offline, no network).
     // Capped at 100 pages to bound memory for very large documents.
-    val pageImages: List<String> = remember(file) {
-        val screenWidthPx = context.resources.displayMetrics.widthPixels
-        val targetWidth = (screenWidthPx * 1.5f).coerceAtLeast(1f)
+    // Landscape: target screen HEIGHT so the full page fits vertically.
+    val pageImages: List<String> = remember(file, isLandscape) {
+        val dm = context.resources.displayMetrics
+        val targetSize = if (isLandscape) {
+            (dm.heightPixels * 1.5f).coerceAtLeast(1f)
+        } else {
+            (dm.widthPixels * 1.5f).coerceAtLeast(1f)
+        }
         val renderCount = min(pageCount, 100)
         (0 until renderCount).mapNotNull { pageIndex ->
-            renderPageBase64(renderer, pageIndex, targetWidth)
+            renderPageBase64(renderer, pageIndex, targetSize)
         }
     }
 
@@ -114,43 +163,111 @@ fun PdfReaderScreen(
         buildPageHtml(pageImages)
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            text = "\uD83D\uDCC4 $title",
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        )
-
-        AndroidView(
-            factory = { ctx ->
-                WebView(ctx).apply {
-                    settings.javaScriptEnabled = false
-                    settings.setSupportZoom(true)
-                    settings.builtInZoomControls = true
-                    settings.displayZoomControls = false
-                    settings.loadWithOverviewMode = true
-                    settings.useWideViewPort = true
-                    settings.setSupportMultipleWindows(false)
-                    settings.allowFileAccess = true
-                    isVerticalScrollBarEnabled = true
-                    isHorizontalScrollBarEnabled = false
-                    loadDataWithBaseURL(
-                        null,
-                        html,
-                        "text/html",
-                        "UTF-8",
-                        null
+    if (isLandscape) {
+        // ── Landscape: compact single-row toolbar + full-bleed reader ──
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onClose) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "1/$pageCount",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                if (onOpenBrowser != null) {
+                    TextButton(onClick = onOpenBrowser) {
+                        Text("\u2197", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+
+            AndroidView(
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        settings.javaScriptEnabled = false
+                        settings.setSupportZoom(true)
+                        settings.builtInZoomControls = true
+                        settings.displayZoomControls = false
+                        settings.loadWithOverviewMode = true
+                        settings.useWideViewPort = true
+                        settings.setSupportMultipleWindows(false)
+                        settings.allowFileAccess = true
+                        isVerticalScrollBarEnabled = true
+                        isHorizontalScrollBarEnabled = false
+                        loadDataWithBaseURL(
+                            null,
+                            html,
+                            "text/html",
+                            "UTF-8",
+                            null
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    } else {
+        // ── Portrait: title label + full reader ──
+        Column(modifier = Modifier.fillMaxSize()) {
+            Text(
+                text = "\uD83D\uDCC4 $title",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+
+            AndroidView(
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        settings.javaScriptEnabled = false
+                        settings.setSupportZoom(true)
+                        settings.builtInZoomControls = true
+                        settings.displayZoomControls = false
+                        settings.loadWithOverviewMode = true
+                        settings.useWideViewPort = true
+                        settings.setSupportMultipleWindows(false)
+                        settings.allowFileAccess = true
+                        isVerticalScrollBarEnabled = true
+                        isHorizontalScrollBarEnabled = false
+                        loadDataWithBaseURL(
+                            null,
+                            html,
+                            "text/html",
+                            "UTF-8",
+                            null
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
 
 /**
  * Render a single PDF page into a base64-encoded JPEG string.
+ * [targetWidth] is the render width in pixels — in portrait this is
+ * 1.5× screen width; in landscape it is 1.5× screen height so the
+ * full page fits vertically.
  * Returns null if rendering fails (e.g. page is encrypted).
  */
 private fun renderPageBase64(
@@ -200,4 +317,14 @@ private fun buildPageHtml(pageImages: List<String>): String = buildString {
         append("\" loading=\"lazy\">")
     }
     append("</body></html>")
+}
+
+/** Walk up the Context chain to find the hosting Activity, or null. */
+private fun android.content.Context.findActivity(): android.app.Activity? {
+    var ctx = this
+    while (ctx is android.content.ContextWrapper) {
+        if (ctx is android.app.Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
 }

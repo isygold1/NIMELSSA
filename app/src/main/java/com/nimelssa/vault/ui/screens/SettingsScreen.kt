@@ -36,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 import com.nimelssa.vault.data.OfflineManager
+import com.nimelssa.vault.ui.theme.OrientationManager
+import com.nimelssa.vault.ui.theme.OrientationMode
 import com.nimelssa.vault.ui.theme.ThemeManager
 import com.nimelssa.vault.ui.theme.ThemeMode
 
@@ -46,6 +48,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val themeMode by ThemeManager.mode.collectAsState()
+    val orientationMode by OrientationManager.mode.collectAsState()
     val context = LocalContext.current
 
     // Current download folder display name; refreshed on pick/clear so the
@@ -134,6 +137,56 @@ fun SettingsScreen(
 
             Text(
                 text = "The theme applies instantly. Your choice is saved on this device.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "ORIENTATION",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                    ThemeOptionRow(
+                        label = "Auto (System)",
+                        description = "Follow your device's rotation setting",
+                        selected = orientationMode == OrientationMode.AUTO,
+                        onClick = { OrientationManager.setMode(OrientationMode.AUTO) }
+                    )
+                    ThemeOptionRow(
+                        label = "Portrait",
+                        description = "PDF pages always render in portrait",
+                        selected = orientationMode == OrientationMode.PORTRAIT,
+                        onClick = { OrientationManager.setMode(OrientationMode.PORTRAIT) }
+                    )
+                    ThemeOptionRow(
+                        label = "Landscape",
+                        description = "PDF pages always render in landscape",
+                        selected = orientationMode == OrientationMode.LANDSCAPE,
+                        onClick = { OrientationManager.setMode(OrientationMode.LANDSCAPE) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Locks the PDF viewer orientation. Other screens follow your device setting.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp)

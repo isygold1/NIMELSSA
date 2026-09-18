@@ -46,6 +46,7 @@ import com.nimelssa.vault.ui.screens.ReportsDashboardScreen
 import com.nimelssa.vault.ui.screens.SettingsScreen
 import com.nimelssa.vault.ui.screens.WorkspaceScreen
 import com.nimelssa.vault.ui.theme.NIMELSSATheme
+import com.nimelssa.vault.ui.theme.OrientationManager
 import com.nimelssa.vault.ui.theme.ThemeManager
 import kotlinx.coroutines.launch
 
@@ -54,6 +55,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Restore persisted theme preference before composing
         ThemeManager.init(applicationContext)
+        // Restore persisted PDF orientation preference
+        OrientationManager.init(applicationContext)
         // Check for existing Firebase Auth session on startup
         UserSession.checkExistingSession()
         setContent {
