@@ -1,5 +1,7 @@
 package com.nimelssa.vault
 
+import android.app.Activity
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -50,6 +53,7 @@ import com.nimelssa.vault.ui.screens.SettingsScreen
 import com.nimelssa.vault.ui.screens.WorkspaceScreen
 import com.nimelssa.vault.ui.theme.NIMELSSATheme
 import com.nimelssa.vault.ui.theme.OrientationManager
+import com.nimelssa.vault.ui.theme.OrientationMode
 import com.nimelssa.vault.ui.theme.ThemeManager
 import kotlinx.coroutines.launch
 
@@ -250,6 +254,17 @@ fun MainApp() {
 
     // ── Save last route across config changes (orientation rotation) ──
     var savedRoute by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // ── Force activity orientation based on user preference ──
+    val orientationMode by OrientationManager.mode.collectAsState()
+    val activity = (LocalContext.current as? Activity)
+    LaunchedEffect(orientationMode) {
+        activity?.requestedOrientation = when (orientationMode) {
+            OrientationMode.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            OrientationMode.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            OrientationMode.AUTO -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
 
     // ── Loading screen (initial session check in progress) ──
     if (!userState.isLoggedIn && userState.isLoading) {

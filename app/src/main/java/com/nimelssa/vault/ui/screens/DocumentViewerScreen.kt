@@ -92,6 +92,13 @@ fun DocumentViewerScreen(
     val scope = rememberCoroutineScope()
     val resourceMap by ResourceRepository.resources.collectAsState()
 
+    // ── Reload courses + resources on entry (handles activity recreation
+    //    where CourseRepository.courses may be empty). ──
+    LaunchedEffect(Unit) {
+        CourseRepository.loadAll()
+        ResourceRepository.loadAll()
+    }
+
     // "TEXTBOOK" is the synthetic course used by the Level Textbooks cards in
     // the workspace. It has no Firestore/session course entry — build the
     // display course from the level the card was on.
@@ -117,6 +124,18 @@ fun DocumentViewerScreen(
     else allResources
 
     if (course == null) {
+        // Show loading spinner while courses are being loaded from Firestore
+        // (happens after activity recreation — courses may take a moment to arrive).
+        if (CourseRepository.courses.collectAsState().value.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Loading course data...", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            return
+        }
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Course not found: $courseCode", color = MaterialTheme.colorScheme.error)
         }
