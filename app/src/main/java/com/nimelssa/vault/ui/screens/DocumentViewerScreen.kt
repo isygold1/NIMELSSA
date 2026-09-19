@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -171,6 +172,16 @@ fun DocumentViewerScreen(
         else -> course.code
     }
     val inListMode = pdfFile == null && activeUrl == null
+
+    // ── System back button: step back through viewer states instead of
+    //    popping the entire NavHost route. ──
+    BackHandler {
+        when {
+            pdfFile != null -> { pdfFile = null; pdfSourceUrl = null }
+            activeUrl != null -> { activeUrl = null }
+            else -> onClose()
+        }
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         // ── Top bar ──

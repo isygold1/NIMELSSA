@@ -72,6 +72,15 @@ import com.nimelssa.vault.data.ResourceRepository
 import com.nimelssa.vault.data.UserRole
 import com.nimelssa.vault.data.UserSession
 import com.nimelssa.vault.ui.components.AppScreenHeader
+import android.content.res.Configuration
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.platform.LocalConfiguration
+import com.nimelssa.vault.ui.theme.OrientationManager
+import com.nimelssa.vault.ui.theme.OrientationMode
 import kotlinx.coroutines.launch
 
 /**
@@ -113,6 +122,15 @@ fun AdminScreen(
     var showAddForm by remember { mutableStateOf(false) }
     var showLinkForm by remember { mutableStateOf(false) }
     var editingCourse by remember { mutableStateOf<Course?>(null) }
+
+    // ── Orientation detection ──
+    val configuration = LocalConfiguration.current
+    val orientationMode by OrientationManager.mode.collectAsState()
+    val isLandscape = when (orientationMode) {
+        OrientationMode.PORTRAIT -> false
+        OrientationMode.LANDSCAPE -> true
+        OrientationMode.AUTO -> configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    }
 
     // ── Filter proposals for rep's level ──
     // Proposals are routed by targetLevel (set by student at submission time).
@@ -162,32 +180,75 @@ fun AdminScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            pendingProposals.forEach { proposal ->
-                ProposalCard(
-                    proposal = proposal,
-                    isScanning = scanningId == proposal.id,
-                    hasScanned = scannedMap[proposal.id] == true,
-                    onScan = {
-                        scanningId = proposal.id
-                        scope.launch {
-                            scanProposal(proposal)
-                            scannedMap = scannedMap + (proposal.id to true)
-                            scanningId = null
+            if (isLandscape) {
+                val proposalChunks = pendingProposals.chunked(2)
+                proposalChunks.forEach { chunk ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        chunk.forEach { proposal ->
+                            Box(modifier = Modifier.weight(1f)) {
+                                ProposalCard(
+                                    proposal = proposal,
+                                    isScanning = scanningId == proposal.id,
+                                    hasScanned = scannedMap[proposal.id] == true,
+                                    onScan = {
+                                        scanningId = proposal.id
+                                        scope.launch {
+                                            scanProposal(proposal)
+                                            scannedMap = scannedMap + (proposal.id to true)
+                                            scanningId = null
+                                        }
+                                    },
+                                    onEdit = { /* TODO: inline edit mode */ },
+                                    onApprove = { manualAssignments ->
+                                        scope.launch {
+                                            approveProposal(proposal, user.email, manualAssignments)
+                                        }
+                                    },
+                                    onReject = {
+                                        scope.launch {
+                                            ProposalRepository.reject(proposal.id)
+                                        }
+                                    }
+                                )
+                            }
                         }
-                    },
-                    onEdit = { /* TODO: inline edit mode */ },
-                    onApprove = { manualAssignments ->
-                        scope.launch {
-                            approveProposal(proposal, user.email, manualAssignments)
-                        }
-                    },
-                    onReject = {
-                        scope.launch {
-                            ProposalRepository.reject(proposal.id)
+                        if (chunk.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            } else {
+                pendingProposals.forEach { proposal ->
+                    ProposalCard(
+                        proposal = proposal,
+                        isScanning = scanningId == proposal.id,
+                        hasScanned = scannedMap[proposal.id] == true,
+                        onScan = {
+                            scanningId = proposal.id
+                            scope.launch {
+                                scanProposal(proposal)
+                                scannedMap = scannedMap + (proposal.id to true)
+                                scanningId = null
+                            }
+                        },
+                        onEdit = { /* TODO: inline edit mode */ },
+                        onApprove = { manualAssignments ->
+                            scope.launch {
+                                approveProposal(proposal, user.email, manualAssignments)
+                            }
+                        },
+                        onReject = {
+                            scope.launch {
+                                ProposalRepository.reject(proposal.id)
+                            }
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
             }
             Spacer(modifier = Modifier.height(12.dp))
         }
@@ -252,14 +313,32 @@ fun AdminScreen(
             resourceMap.containsKey(key) && resourceMap[key]!!.isNotEmpty()
         }
 
-        coursesWithResources.forEach { course ->
-            CourseManageRow(
-                course = course,
-                canDelete = isAdmin || course.level == repLevel,
-                onPreview = { onPreview(course, null) },
-                onEdit = { editingCourse = course }
-            )
-            Spacer(modifier = Modifier.height(6.dp))
+        if (isLandscape) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(coursesWithResources) { course ->
+                    CourseManageRow(
+                        course = course,
+                        canDelete = isAdmin || course.level == repLevel,
+                        onPreview = { onPreview(course, null) },
+                        onEdit = { editingCourse = course }
+                    )
+                }
+            }
+        } else {
+            coursesWithResources.forEach { course ->
+                CourseManageRow(
+                    course = course,
+                    canDelete = isAdmin || course.level == repLevel,
+                    onPreview = { onPreview(course, null) },
+                    onEdit = { editingCourse = course }
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
         }
 
         // ── Edit course dialog (CCMAS re-code keeps files, links old code) ──
