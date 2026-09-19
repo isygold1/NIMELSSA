@@ -1,6 +1,5 @@
 package com.nimelssa.vault.ui.screens
 
-import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Matrix
@@ -71,22 +70,6 @@ fun PdfReaderScreen(
         OrientationMode.PORTRAIT -> false
         OrientationMode.LANDSCAPE -> true
         OrientationMode.AUTO -> configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    }
-
-    // Lock the activity orientation while the PDF viewer is open.
-    DisposableEffect(orientationMode) {
-        val activity = context.findActivity()
-        val originalOrientation = activity?.requestedOrientation
-        if (orientationMode == OrientationMode.PORTRAIT) {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        } else if (orientationMode == OrientationMode.LANDSCAPE) {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        }
-        onDispose {
-            if (activity != null && originalOrientation != null) {
-                activity.requestedOrientation = originalOrientation
-            }
-        }
     }
 
     val rendererResult = remember(file) {
@@ -188,7 +171,7 @@ fun PdfReaderScreen(
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    text = "1/$pageCount",
+                    text = "$pageCount pages",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 8.dp)
@@ -317,14 +300,4 @@ private fun buildPageHtml(pageImages: List<String>): String = buildString {
         append("\" loading=\"lazy\">")
     }
     append("</body></html>")
-}
-
-/** Walk up the Context chain to find the hosting Activity, or null. */
-private fun android.content.Context.findActivity(): android.app.Activity? {
-    var ctx = this
-    while (ctx is android.content.ContextWrapper) {
-        if (ctx is android.app.Activity) return ctx
-        ctx = ctx.baseContext
-    }
-    return null
 }
