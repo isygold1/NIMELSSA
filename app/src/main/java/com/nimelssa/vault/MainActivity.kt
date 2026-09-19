@@ -20,9 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -252,9 +250,6 @@ fun MainApp() {
     val userState by UserSession.state.collectAsState()
     val navController = rememberNavController()
 
-    // ── Save last route across config changes (orientation rotation) ──
-    var savedRoute by rememberSaveable { mutableStateOf<String?>(null) }
-
     // ── Force activity orientation based on user preference ──
     val orientationMode by OrientationManager.mode.collectAsState()
     val activity = (LocalContext.current as? Activity)
@@ -303,19 +298,6 @@ fun MainApp() {
     val scope = rememberCoroutineScope()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
-
-    // ── Restore viewer route after config change (orientation rotation) ──
-    val wasViewer = savedRoute?.startsWith("viewer/") == true
-    LaunchedEffect(wasViewer, currentRoute) {
-        if (wasViewer && savedRoute != null && currentRoute != savedRoute) {
-            navController.navigate(savedRoute!!)
-            savedRoute = null
-        }
-    }
-    // Track current route for restore
-    LaunchedEffect(currentRoute) {
-        if (currentRoute != null) savedRoute = currentRoute
-    }
 
     val selectedTab = when {
         currentRoute == Routes.WORKSPACE -> BottomNavTab.WORKSPACE

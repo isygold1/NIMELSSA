@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -212,10 +213,11 @@ fun PdfReaderScreen(
             modifier = Modifier.align(Alignment.TopCenter)
         ) {
             if (isLandscape) {
-                // Landscape: compact single-row toolbar
+                // Landscape: compact single-row toolbar with solid background
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -247,7 +249,7 @@ fun PdfReaderScreen(
                     }
                 }
             } else {
-                // Portrait: compact title
+                // Portrait: compact title with solid background
                 Text(
                     text = "\uD83D\uDCC4 $title",
                     style = MaterialTheme.typography.labelSmall,
@@ -256,6 +258,7 @@ fun PdfReaderScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))
                         .padding(horizontal = 12.dp, vertical = 4.dp)
                 )
             }
