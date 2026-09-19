@@ -1,5 +1,6 @@
 package com.nimelssa.vault.ui.components
 
+import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CloudUpload
@@ -34,13 +35,13 @@ fun BottomNavBar(
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
-        modifier = modifier
+        modifier = modifier.height(56.dp)
     ) {
         tabs.forEach { tab ->
             NavigationBarItem(
                 selected = selectedTab == tab,
                 onClick = { onTabSelected(tab) },
-                icon = { Icon(tab.icon, contentDescription = tab.label) },
+                icon = { Icon(tab.icon, contentDescription = tab.label, modifier = Modifier.height(20.dp)) },
                 label = { Text(tab.label, style = MaterialTheme.typography.labelSmall) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.primary,

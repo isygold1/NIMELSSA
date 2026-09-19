@@ -6,8 +6,16 @@ import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import android.util.Base64
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,7 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -38,7 +48,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.activity.compose.BackHandler
 import com.nimelssa.vault.ui.theme.OrientationManager
 import com.nimelssa.vault.ui.theme.OrientationMode
 import java.io.ByteArrayOutputStream
@@ -51,9 +60,7 @@ import kotlin.math.min
  * a WebView, which provides native pinch-zoom, double-tap zoom, and
  * smooth vertical scroll — no custom gesture handling needed.
  *
- * In landscape, pages render at 1.5× screen height so the full page fits
- * vertically; the compact toolbar shows a back button, title, page count,
- * and browser button in a single row to maximize reading area.
+ * Chrome-style: toolbar auto-hides on scroll down, reappears on scroll up.
  */
 @Composable
 fun PdfReaderScreen(
@@ -73,9 +80,11 @@ fun PdfReaderScreen(
         OrientationMode.AUTO -> configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     }
 
-    // ── System back button → close PDF reader (return to resource list),
-    //    don't let it propagate to NavHost which would pop the whole viewer route. ──
+    // ── System back button → close PDF reader ──
     BackHandler { onClose() }
+
+    // ── Chrome-style toolbar visibility ──
+    var toolbarVisible by remember { mutableStateOf(true) }
 
     val rendererResult = remember(file) {
         runCatching {
@@ -131,8 +140,6 @@ fun PdfReaderScreen(
     val pageCount = renderer.pageCount
 
     // Render all pages to base64-encoded JPEG strings (offline, no network).
-    // Capped at 100 pages to bound memory for very large documents.
-    // Landscape: target screen HEIGHT so the full page fits vertically.
     val pageImages: List<String> = remember(file, isLandscape) {
         val dm = context.resources.displayMetrics
         val targetSize = if (isLandscape) {
@@ -146,117 +153,146 @@ fun PdfReaderScreen(
         }
     }
 
-    // Build a single HTML document with embedded page images.
     val html: String = remember(pageImages) {
         buildPageHtml(pageImages)
     }
 
-    if (isLandscape) {
-        // ── Landscape: compact single-row toolbar + full-bleed reader ──
-        Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onClose) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
+    // Shared WebView factory that injects scroll-detection JavaScript.
+    // The JS sends "scrollUp" / "scrollDown" via @JavascriptInterface,
+    // which toggles toolbarVisible.
+    val webViewFactory: (android.content.Context) -> WebView = { ctx ->
+        WebView(ctx).apply {
+            settings.javaScriptEnabled = true
+            settings.setSupportZoom(true)
+            settings.builtInZoomControls = true
+            settings.displayZoomControls = false
+            settings.loadWithOverviewMode = true
+            settings.useWideViewPort = true
+            settings.setSupportMultipleWindows(false)
+            settings.allowFileAccess = true
+            isVerticalScrollBarEnabled = true
+            isHorizontalScrollBarEnabled = false
+
+            // Expose scroll-direction callbacks to injected JS.
+            addJavascriptInterface(object {
+                @JavascriptInterface
+                fun scrollDown() {
+                    post { toolbarVisible = false }
                 }
+                @JavascriptInterface
+                fun scrollUp() {
+                    post { toolbarVisible = true }
+                }
+            }, "ScrollBridge")
+
+            loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+
+            // After page loads, inject scroll-detection script.
+            webViewClient = object : android.webkit.WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    view?.evaluateJavascript(SCROLL_DETECT_JS, null)
+                }
+            }
+        }
+    }
+
+    // ── Layout: toolbar animates in/out, WebView fills remaining space ──
+    Box(modifier = Modifier.fillMaxSize()) {
+        // WebView — always fills the entire screen.
+        AndroidView(
+            factory = webViewFactory,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Toolbar overlay — slides in/out based on scroll direction.
+        AnimatedVisibility(
+            visible = toolbarVisible,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            if (isLandscape) {
+                // Landscape: compact single-row toolbar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onClose) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "$pageCount pages",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+                    if (onOpenBrowser != null) {
+                        TextButton(onClick = onOpenBrowser) {
+                            Text("\u2197", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            } else {
+                // Portrait: compact title
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.labelMedium,
+                    text = "\uD83D\uDCC4 $title",
+                    style = MaterialTheme.typography.labelSmall,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
                 )
-                Text(
-                    text = "$pageCount pages",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                )
-                if (onOpenBrowser != null) {
-                    TextButton(onClick = onOpenBrowser) {
-                        Text("\u2197", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
             }
-
-            AndroidView(
-                factory = { ctx ->
-                    WebView(ctx).apply {
-                        settings.javaScriptEnabled = false
-                        settings.setSupportZoom(true)
-                        settings.builtInZoomControls = true
-                        settings.displayZoomControls = false
-                        settings.loadWithOverviewMode = true
-                        settings.useWideViewPort = true
-                        settings.setSupportMultipleWindows(false)
-                        settings.allowFileAccess = true
-                        isVerticalScrollBarEnabled = true
-                        isHorizontalScrollBarEnabled = false
-                        loadDataWithBaseURL(
-                            null,
-                            html,
-                            "text/html",
-                            "UTF-8",
-                            null
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-    } else {
-        // ── Portrait: title label + full reader ──
-        Column(modifier = Modifier.fillMaxSize()) {
-            Text(
-                text = "\uD83D\uDCC4 $title",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-
-            AndroidView(
-                factory = { ctx ->
-                    WebView(ctx).apply {
-                        settings.javaScriptEnabled = false
-                        settings.setSupportZoom(true)
-                        settings.builtInZoomControls = true
-                        settings.displayZoomControls = false
-                        settings.loadWithOverviewMode = true
-                        settings.useWideViewPort = true
-                        settings.setSupportMultipleWindows(false)
-                        settings.allowFileAccess = true
-                        isVerticalScrollBarEnabled = true
-                        isHorizontalScrollBarEnabled = false
-                        loadDataWithBaseURL(
-                            null,
-                            html,
-                            "text/html",
-                            "UTF-8",
-                            null
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
         }
     }
 }
 
 /**
+ * JavaScript injected into the WebView to detect scroll direction.
+ * Tracks scrollY delta between events and calls the native bridge
+ * when the user scrolls up or down by a threshold (10px).
+ */
+private const val SCROLL_DETECT_JS = """
+(function(){
+    var lastY = window.scrollY;
+    var ticking = false;
+    window.addEventListener('scroll', function(){
+        if(!ticking){
+            window.requestAnimationFrame(function(){
+                var currentY = window.scrollY;
+                var delta = currentY - lastY;
+                if(delta > 10){
+                    ScrollBridge.scrollDown();
+                } else if(delta < -10){
+                    ScrollBridge.scrollUp();
+                }
+                lastY = currentY;
+                ticking = false;
+            });
+            ticking = true;
+        }
+    });
+})();
+"""
+
+/**
  * Render a single PDF page into a base64-encoded JPEG string.
- * [targetWidth] is the render width in pixels — in portrait this is
- * 1.5× screen width; in landscape it is 1.5× screen height so the
- * full page fits vertically.
- * Returns null if rendering fails (e.g. page is encrypted).
  */
 private fun renderPageBase64(
     renderer: PdfRenderer,
